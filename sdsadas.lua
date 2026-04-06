@@ -1,62 +1,104 @@
 -- ============================================
--- СИСТЕМА КЛЮЧЕЙ (со спрятанным ключом)
+-- ОБФУСЦИРОВАННАЯ СИСТЕМА КЛЮЧЕЙ
 -- ============================================
 
--- Часть 1: Разбивка ключа по разным функциям
-local function getPartA()
-    return "X7K9P"
+-- Часть ключа 1 (X7K9P) - разбита на символы
+local _a = "X"
+local _b = "7"
+local _c = "K"
+local _d = "9"
+local _e = "P"
+
+-- Где-то в середине скрипта (переменные для других целей)
+local someValue = 100
+local anotherValue = 500
+local tempData = {}
+
+-- Часть ключа 2 (-3M2N8) - спрятана в таблице
+local hiddenParts = {
+    ["sep1"] = "-",
+    ["num1"] = "3",
+    ["letter1"] = "M",
+    ["num2"] = "2",
+    ["letter2"] = "N",
+    ["num3"] = "8"
+}
+
+-- Функция для сбора первой части
+local function getFirstPart()
+    return _a .. _b .. _c .. _d .. _e
 end
 
-local function getPartB()
-    return "-3M2N8"
+-- Функция для сбора второй части
+local function getSecondPart()
+    return hiddenParts["sep1"] .. hiddenParts["num1"] .. hiddenParts["letter1"] .. 
+           hiddenParts["num2"] .. hiddenParts["letter2"] .. hiddenParts["num3"]
 end
 
-local function getPartC()
-    return "-L4R1Q"
+-- Часть ключа 3 (-L4R1Q) - спрятана в другой таблице
+local keySuffix = {
+    [1] = "-",
+    [2] = "L",
+    [3] = "4",
+    [4] = "R",
+    [5] = "1",
+    [6] = "Q"
+}
+
+-- Функция для сбора третьей части
+local function getThirdPart()
+    local result = ""
+    for i = 1, 6 do
+        result = result .. keySuffix[i]
+    end
+    return result
 end
 
--- Часть 2: Сборка в другой функции
-local function buildKey()
-    local a = getPartA()
-    local b = getPartB()
-    local c = getPartC()
-    return a .. b .. c
+-- Рандомная функция для отвлечения
+local function calculateSomething(a, b)
+    return a + b
 end
 
--- Часть 3: Дополнительная "обфускация" (перемешивание символов)
-local function shuffleCheck(key)
-    -- Простая проверка без расшифровки
-    local correct = "X7K9P-3M2N8-L4R1Q"
-    return key == correct
+-- Еще одна рандомная переменная
+local randomString = "nothing"
+
+-- Функция сборки полного ключа (вызвана глубоко)
+local function buildFullKey()
+    local first = getFirstPart()
+    local second = getSecondPart()
+    local third = getThirdPart()
+    return first .. second .. third
 end
 
--- Часть 4: Проверка ключа (без прямого сравнения)
-local function validateKey(input)
-    local built = buildKey()
-    return input == built
+-- Проверка ключа
+local function checkKey(input)
+    local correct = buildFullKey()
+    return input == correct
 end
 
--- Часть 5: GUI системы ключей
+-- ============================================
+-- GUI СИСТЕМЫ КЛЮЧЕЙ
+-- ============================================
 local keyAccepted = false
 
 local function createKeyGUI()
     local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "KeySystem"
+    screenGui.Name = "AuthSystem"
     screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 350, 0, 200)
     frame.Position = UDim2.new(0.5, -175, 0.5, -100)
-    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 45)
-    title.Text = "🔐 Введите ключ"
+    title.Text = "🔐 АВТОРИЗАЦИЯ"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 18
-    title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    title.TextSize = 20
+    title.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     title.Parent = frame
     
     local keyBox = Instance.new("TextBox")
@@ -64,7 +106,7 @@ local function createKeyGUI()
     keyBox.Position = UDim2.new(0.1, 0, 0, 60)
     keyBox.PlaceholderText = "XXXXX-XXXXX-XXXXX"
     keyBox.Text = ""
-    keyBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    keyBox.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
     keyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
     keyBox.TextSize = 14
     keyBox.Parent = frame
@@ -72,8 +114,8 @@ local function createKeyGUI()
     local submitBtn = Instance.new("TextButton")
     submitBtn.Size = UDim2.new(0.4, 0, 0, 40)
     submitBtn.Position = UDim2.new(0.3, 0, 0, 115)
-    submitBtn.Text = "Подтвердить"
-    submitBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    submitBtn.Text = "ВОЙТИ"
+    submitBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
     submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     submitBtn.TextSize = 16
     submitBtn.Parent = frame
@@ -81,34 +123,37 @@ local function createKeyGUI()
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, 0, 0, 35)
     status.Position = UDim2.new(0, 0, 0, 160)
-    status.Text = "Введите ключ доступа"
-    status.TextColor3 = Color3.fromRGB(200, 200, 200)
+    status.Text = "Введите лицензионный ключ"
+    status.TextColor3 = Color3.fromRGB(180, 180, 180)
     status.TextSize = 12
     status.BackgroundTransparency = 1
     status.Parent = frame
     
     submitBtn.MouseButton1Click:Connect(function()
-        if validateKey(keyBox.Text) then
+        if checkKey(keyBox.Text) then
             keyAccepted = true
-            status.Text = "✅ Ключ принят!"
+            status.Text = "✅ ДОСТУП РАЗРЕШЕН!"
             status.TextColor3 = Color3.fromRGB(0, 255, 0)
-            task.wait(1)
+            submitBtn.Visible = false
+            keyBox.Visible = false
+            task.wait(1.5)
             screenGui:Destroy()
         else
-            status.Text = "❌ Неверный ключ!"
+            status.Text = "❌ НЕВЕРНЫЙ КЛЮЧ!"
             status.TextColor3 = Color3.fromRGB(255, 0, 0)
             keyBox.Text = ""
         end
     end)
 end
 
+-- Запуск проверки ключа
 createKeyGUI()
 repeat task.wait() until keyAccepted == true
 
-print("[Система] Доступ разрешен!")
+print("[AUTH] Доступ разрешен!")
 
 -- ============================================
--- ДАЛЕЕ ВАШ ОСНОВНОЙ СКРИПТ
+-- ОСНОВНОЙ СКРИПТ (Rayfield UI)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -123,7 +168,9 @@ local Window = Rayfield:CreateWindow({
 
 local AllTab = Window:CreateTab("All", 4483362458)
 
--- Warlord Sign Gui
+-- ===== LOBBY SECTION =====
+AllTab:CreateSection("Lobby")
+
 local isOpen = false
 local cachedGUI = nil
 
@@ -152,9 +199,11 @@ local function switchWarlordSignGUI()
     end
 end
 
-AllTab:CreateSection("Lobby")
 AllTab:CreateButton({ Name = "Warlord Sign Gui", Callback = switchWarlordSignGUI })
 AllTab:CreateSection(" ")
+
+-- ===== GAME SECTION =====
+AllTab:CreateSection("Game")
 
 -- Anti Macro
 _G.AntiMacro = false
@@ -183,7 +232,9 @@ local function stopAntiMacro()
     end
 end
 
--- Anti AFK (только 1 раз)
+AllTab:CreateToggle({ Name = "Anti Macro", CurrentValue = false, Callback = function(value) _G.AntiMacro = value; if value then startAntiMacro() else stopAntiMacro() end end })
+
+-- Anti AFK
 local antiAfkLoaded = false
 local antiAfkButtonPressed = false
 
@@ -208,12 +259,12 @@ local function loadAntiAfk()
     end
 end
 
-AllTab:CreateSection("Game")
-AllTab:CreateToggle({ Name = "Anti Macro", CurrentValue = false, Callback = function(value) _G.AntiMacro = value; if value then startAntiMacro() else stopAntiMacro() end end })
 AllTab:CreateButton({ Name = "Anti AFK", Callback = loadAntiAfk })
 AllTab:CreateSection(" ")
 
--- Auto Rng Items
+-- ===== RNG SECTION =====
+AllTab:CreateSection("RNG")
+
 _G.AutoRng = false
 local autoRngThread = nil
 local localPlayer = game.Players.LocalPlayer
@@ -241,8 +292,7 @@ local function autoRngLoop()
     end
 end
 
-AllTab:CreateSection("RNG")
 AllTab:CreateToggle({ Name = "Auto Rng Items", CurrentValue = false, Callback = function(value) _G.AutoRng = value; if value then autoRngThread = coroutine.wrap(autoRngLoop); autoRngThread() end end })
 
-print("[Скрипт] Загружен успешно!")
+print("[SCRIPT] Загружен успешно!")
 Rayfield:Notify({ Title = "Скрипт", Content = "Загружен успешно!", Duration = 3 })
