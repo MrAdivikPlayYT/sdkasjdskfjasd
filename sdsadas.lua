@@ -1,5 +1,5 @@
 -- Система ключей через GitHub
-local keysURL = "https://raw.githubusercontent.com/MrAdivikPlayYT/sdkasjdskfjasd/refs/heads/main/keys.txt"
+local keysURL = "https://raw.githubusercontent.com/MrAdivikPlayYT/sdkasjdskfjasd/refs/heads/main/keys.txt?token=GHSAT0AAAAAADZQGTOBHSEPSWV36ACZKVEE2OTZYWA"
 
 local keyAccepted = false
 
