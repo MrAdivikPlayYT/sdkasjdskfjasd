@@ -232,5 +232,20 @@ end
 
 AllTab:CreateToggle({ Name = "Auto Rng Items", CurrentValue = false, Callback = function(value) _G.AutoRng = value; if value then autoRngThread = coroutine.wrap(autoRngLoop); autoRngThread() end end })
 
+-- Раздел Admin (можно добавить новый или вставить в существующий)
+AllTab:CreateSection("Other")
+
+AllTab:CreateButton({
+    Name = "Infinite Yield",
+    Callback = function()
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source.lua'))()
+        Rayfield:Notify({
+            Title = "Infinite Yield",
+            Content = "Загружен!",
+            Duration = 2
+        })
+    end,
+})
+
 print("[СКРИПТ] Загружен!")
 Rayfield:Notify({ Title = "Скрипт", Content = "Загружен!", Duration = 3 })
