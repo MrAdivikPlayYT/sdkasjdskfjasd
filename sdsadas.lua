@@ -235,17 +235,19 @@ AllTab:CreateToggle({ Name = "Auto Rng Items", CurrentValue = false, Callback = 
 -- Раздел Admin (можно добавить новый или вставить в существующий)
 AllTab:CreateSection("Other")
 
+-- Исправленная кнопка для Infinite Yield
 AllTab:CreateButton({
     Name = "Infinite Yield",
     Callback = function()
-        loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source.lua'))()
-        Rayfield:Notify({
-            Title = "Infinite Yield",
-            Content = "Загружен!",
-            Duration = 2
-        })
-    end,
+        pcall(function()
+            loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source.lua'))()
+            Rayfield:Notify({
+                Title = "Infinite Yield",
+                Content = "Загружен!",
+                Duration = 2
+            })
+        end)
+    end
 })
-
 print("[СКРИПТ] Загружен!")
 Rayfield:Notify({ Title = "Скрипт", Content = "Загружен!", Duration = 3 })
