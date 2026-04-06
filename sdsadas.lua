@@ -357,10 +357,42 @@ end
 AllTab:CreateToggle({ Name = "Auto Rng Items", CurrentValue = false, Callback = function(value) _G.AutoRng = value; if value then autoRngThread = coroutine.wrap(autoRngLoop); autoRngThread() end end })
 AllTab:CreateSection(" ")
 
+-- ===== TELEPORTS SECTION =====
+AllTab:CreateSection("Teleports")
+
+-- Teleport Lobby
+local function teleportToLobby()
+    pcall(function()
+        game:GetService("TeleportService"):Teleport(14279693118, game.Players.LocalPlayer)
+        Rayfield:Notify({ Title = "Teleport", Content = "Телепорт в лобби...", Duration = 2 })
+    end)
+end
+AllTab:CreateButton({ Name = "Teleport Lobby", Callback = teleportToLobby })
+
+-- Teleport RNG
+local function teleportToRNG()
+    pcall(function()
+        game:GetService("TeleportService"):Teleport(104582513334317, game.Players.LocalPlayer)
+        Rayfield:Notify({ Title = "Teleport", Content = "Телепорт в RNG...", Duration = 2 })
+    end)
+end
+AllTab:CreateButton({ Name = "Teleport RNG", Callback = teleportToRNG })
+
+-- Teleport Trading Plaza
+local function teleportToTradingPlaza()
+    pcall(function()
+        game:GetService("TeleportService"):Teleport(18711550363, game.Players.LocalPlayer)
+        Rayfield:Notify({ Title = "Teleport", Content = "Телепорт в Trading Plaza...", Duration = 2 })
+    end)
+end
+AllTab:CreateButton({ Name = "Teleport Trading Plaza", Callback = teleportToTradingPlaza })
+
+AllTab:CreateSection(" ")
+
 -- ===== OTHER SECTION (Infinite Yield) =====
 AllTab:CreateSection("Other")
 
--- Infinite Yield (ИСПРАВЛЕНАЯ ВЕРСИЯ - без ошибок)
+-- Infinite Yield
 local iyLoaded = false
 local iyButtonPressed = false
 
@@ -377,7 +409,6 @@ local function loadInfiniteYield()
     
     Rayfield:Notify({ Title = "Infinite Yield", Content = "Загрузка...", Duration = 2 })
     
-    -- ПРОСТАЯ ЗАГРУЗКА БЕЗ ЛИШНИХ ПРОВЕРОК
     local success = pcall(function()
         local scriptContent = game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source')
         loadstring(scriptContent)()
@@ -387,7 +418,7 @@ local function loadInfiniteYield()
     
     if not success then
         iyButtonPressed = false
-        Rayfield:Notify({ Title = "Infinite Yield", Content = "Ошибка загрузки! Попробуйте позже", Duration = 3 })
+        Rayfield:Notify({ Title = "Infinite Yield", Content = "Ошибка загрузки!", Duration = 3 })
     end
 end
 
