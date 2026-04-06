@@ -1,5 +1,5 @@
 -- ============================================
--- СКРИПТ СКИБИДИ ДИФЕНС
+-- СКРИПТ СКИБИДИ ДИФЕНС + INFINITE YIELD
 -- ============================================
 
 -- Обычные переменные для отвлечения
@@ -12,7 +12,6 @@ local settings = {
 local config = {
     speed = 100,
     jumpPower = 50,
-    -- сюда спрятан ключ
     license = "X7K9P-3M2N8-L4R1Q",
     autoSave = true
 }
@@ -23,12 +22,10 @@ local userData = {
     exp = 0
 }
 
--- Функция проверки ключа (скрытая)
 local function validateLicense(input)
     return input == config.license
 end
 
--- GUI для ввода ключа
 local keyAccepted = false
 
 local function showKeyWindow()
@@ -108,7 +105,7 @@ local Window = Rayfield:CreateWindow({
 
 local AllTab = Window:CreateTab("All", 4483362458)
 
--- Lobby
+-- ===== LOBBY SECTION =====
 AllTab:CreateSection("Lobby")
 
 local isOpen = false
@@ -142,9 +139,10 @@ end
 AllTab:CreateButton({ Name = "Warlord Sign Gui", Callback = switchWarlordSignGUI })
 AllTab:CreateSection(" ")
 
--- Game
+-- ===== GAME SECTION =====
 AllTab:CreateSection("Game")
 
+-- Anti Macro
 _G.AntiMacro = false
 local antiMacroConnection = nil
 local originalCFrame = nil
@@ -173,6 +171,7 @@ end
 
 AllTab:CreateToggle({ Name = "Anti Macro", CurrentValue = false, Callback = function(value) _G.AntiMacro = value; if value then startAntiMacro() else stopAntiMacro() end end })
 
+-- Anti AFK
 local antiAfkLoaded = false
 local antiAfkButtonPressed = false
 
@@ -200,7 +199,7 @@ end
 AllTab:CreateButton({ Name = "Anti AFK", Callback = loadAntiAfk })
 AllTab:CreateSection(" ")
 
--- RNG
+-- ===== RNG SECTION =====
 AllTab:CreateSection("RNG")
 
 _G.AutoRng = false
@@ -231,23 +230,41 @@ local function autoRngLoop()
 end
 
 AllTab:CreateToggle({ Name = "Auto Rng Items", CurrentValue = false, Callback = function(value) _G.AutoRng = value; if value then autoRngThread = coroutine.wrap(autoRngLoop); autoRngThread() end end })
+AllTab:CreateSection(" ")
 
--- Раздел Admin (можно добавить новый или вставить в существующий)
+-- ===== OTHER SECTION (Infinite Yield) =====
 AllTab:CreateSection("Other")
 
--- Исправленная кнопка для Infinite Yield
+-- Infinite Yield кнопка (рабочая)
 AllTab:CreateButton({
     Name = "Infinite Yield",
     Callback = function()
-        pcall(function()
-            loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source.lua'))()
+        local success, err = pcall(function()
+            local iy = loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source.lua'))
+            if iy then
+                iy()
+                Rayfield:Notify({
+                    Title = "Infinite Yield",
+                    Content = "Загружен!",
+                    Duration = 2
+                })
+            else
+                Rayfield:Notify({
+                    Title = "Ошибка",
+                    Content = "Не удалось загрузить!",
+                    Duration = 2
+                })
+            end
+        end)
+        if not success then
             Rayfield:Notify({
-                Title = "Infinite Yield",
-                Content = "Загружен!",
+                Title = "Ошибка",
+                Content = "Не удалось загрузить!",
                 Duration = 2
             })
-        end)
+        end
     end
 })
+
 print("[СКРИПТ] Загружен!")
 Rayfield:Notify({ Title = "Скрипт", Content = "Загружен!", Duration = 3 })
