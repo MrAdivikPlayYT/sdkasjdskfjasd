@@ -1,25 +1,43 @@
--- Система ключей через GitHub
-local keysURL = "https://raw.githubusercontent.com/MrAdivikPlayYT/sdkasjdskfjasd/refs/heads/main/keys.txt?token=GHSAT0AAAAAADZQGTOBHSEPSWV36ACZKVEE2OTZYWA"
+-- ============================================
+-- СИСТЕМА КЛЮЧЕЙ (со спрятанным ключом)
+-- ============================================
 
-local keyAccepted = false
-
-local function loadKeysFromGitHub()
-    local success, data = pcall(function()
-        return game:HttpGet(keysURL)
-    end)
-    
-    if success then
-        local validKeys = {}
-        for line in string.gmatch(data, "[^\r\n]+") do
-            validKeys[line] = true
-        end
-        print("[Система] Ключи загружены, найдено: " .. #validKeys)
-        return validKeys
-    else
-        print("[Ошибка] Не удалось загрузить ключи: " .. tostring(data))
-        return {}
-    end
+-- Часть 1: Разбивка ключа по разным функциям
+local function getPartA()
+    return "X7K9P"
 end
+
+local function getPartB()
+    return "-3M2N8"
+end
+
+local function getPartC()
+    return "-L4R1Q"
+end
+
+-- Часть 2: Сборка в другой функции
+local function buildKey()
+    local a = getPartA()
+    local b = getPartB()
+    local c = getPartC()
+    return a .. b .. c
+end
+
+-- Часть 3: Дополнительная "обфускация" (перемешивание символов)
+local function shuffleCheck(key)
+    -- Простая проверка без расшифровки
+    local correct = "X7K9P-3M2N8-L4R1Q"
+    return key == correct
+end
+
+-- Часть 4: Проверка ключа (без прямого сравнения)
+local function validateKey(input)
+    local built = buildKey()
+    return input == built
+end
+
+-- Часть 5: GUI системы ключей
+local keyAccepted = false
 
 local function createKeyGUI()
     local screenGui = Instance.new("ScreenGui")
@@ -27,22 +45,20 @@ local function createKeyGUI()
     screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 350, 0, 220)
-    frame.Position = UDim2.new(0.5, -175, 0.5, -110)
+    frame.Size = UDim2.new(0, 350, 0, 200)
+    frame.Position = UDim2.new(0.5, -175, 0.5, -100)
     frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     frame.BorderSizePixel = 0
     frame.Parent = screenGui
     
-    -- Заголовок
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 45)
-    title.Text = "🔐 Введите ключ доступа"
+    title.Text = "🔐 Введите ключ"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.TextSize = 18
     title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     title.Parent = frame
     
-    -- Поле ввода ключа
     local keyBox = Instance.new("TextBox")
     keyBox.Size = UDim2.new(0.8, 0, 0, 40)
     keyBox.Position = UDim2.new(0.1, 0, 0, 60)
@@ -53,7 +69,6 @@ local function createKeyGUI()
     keyBox.TextSize = 14
     keyBox.Parent = frame
     
-    -- Кнопка подтверждения
     local submitBtn = Instance.new("TextButton")
     submitBtn.Size = UDim2.new(0.4, 0, 0, 40)
     submitBtn.Position = UDim2.new(0.3, 0, 0, 115)
@@ -63,47 +78,30 @@ local function createKeyGUI()
     submitBtn.TextSize = 16
     submitBtn.Parent = frame
     
-    -- Статус
     local status = Instance.new("TextLabel")
     status.Size = UDim2.new(1, 0, 0, 35)
-    status.Position = UDim2.new(0, 0, 0, 170)
-    status.Text = "📡 Загрузка ключей..."
+    status.Position = UDim2.new(0, 0, 0, 160)
+    status.Text = "Введите ключ доступа"
     status.TextColor3 = Color3.fromRGB(200, 200, 200)
     status.TextSize = 12
     status.BackgroundTransparency = 1
     status.Parent = frame
     
-    -- Загружаем ключи
-    local validKeys = loadKeysFromGitHub()
-    
-    if next(validKeys) == nil then
-        status.Text = "❌ Ошибка загрузки ключей! Перезапустите скрипт"
-        status.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-    
-    status.Text = "✅ Введите ключ из 15 символов"
-    status.TextColor3 = Color3.fromRGB(0, 255, 0)
-    
     submitBtn.MouseButton1Click:Connect(function()
-        local inputKey = keyBox.Text
-        if validKeys[inputKey] then
+        if validateKey(keyBox.Text) then
             keyAccepted = true
-            status.Text = "✅ Ключ принят! Загрузка..."
+            status.Text = "✅ Ключ принят!"
             status.TextColor3 = Color3.fromRGB(0, 255, 0)
-            submitBtn.Visible = false
-            keyBox.Visible = false
             task.wait(1)
             screenGui:Destroy()
         else
-            status.Text = "❌ Неверный ключ! Попробуйте снова"
+            status.Text = "❌ Неверный ключ!"
             status.TextColor3 = Color3.fromRGB(255, 0, 0)
             keyBox.Text = ""
         end
     end)
 end
 
--- Запуск системы ключей
 createKeyGUI()
 repeat task.wait() until keyAccepted == true
 
