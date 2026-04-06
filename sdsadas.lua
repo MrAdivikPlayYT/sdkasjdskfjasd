@@ -1,4 +1,46 @@
 -- ============================================
+-- ЗАЩИТА ОТ НЕСКОЛЬКИХ GUI (удаляет старый, загружает новый)
+-- ============================================
+
+-- Удаляем старый GUI если есть
+local function unloadOldScript()
+    -- Удаляем защитную метку
+    local oldProtection = game:GetService("CoreGui"):FindFirstChild("SkibidiProtection")
+    if oldProtection then
+        oldProtection:Destroy()
+    end
+    
+    -- Закрываем старое окно Rayfield если есть
+    local rayfieldGui = game:GetService("CoreGui"):FindFirstChild("Rayfield")
+    if rayfieldGui then
+        rayfieldGui:Destroy()
+    end
+    
+    -- Удаляем старую систему ключей
+    local keyGui = game.Players.LocalPlayer.PlayerGui:FindFirstChild("KeySystem")
+    if keyGui then
+        keyGui:Destroy()
+    end
+    
+    -- Удаляем другие возможные GUI
+    for _, gui in ipairs(game.Players.LocalPlayer.PlayerGui:GetChildren()) do
+        if gui.Name == "KeySystem" or gui.Name == "Auth" then
+            gui:Destroy()
+        end
+    end
+    
+    print("[Система] Старый GUI удалён, загружаем новый...")
+end
+
+-- Запускаем очистку перед загрузкой
+unloadOldScript()
+
+-- Создаём новую защитную метку
+local protectionGui = Instance.new("ScreenGui")
+protectionGui.Name = "SkibidiProtection"
+protectionGui.Parent = game:GetService("CoreGui")
+
+-- ============================================
 -- СКРИПТ СКИБИДИ ДИФЕНС + INFINITE YIELD
 -- ============================================
 
@@ -28,60 +70,143 @@ end
 
 local keyAccepted = false
 
+-- ============================================
+-- НОВЫЙ ДИЗАЙН ОКНА ВВОДА КЛЮЧА (тёмный, закруглённый)
+-- ============================================
 local function showKeyWindow()
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "Auth"
-    gui.Parent = game.Players.LocalPlayer.PlayerGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "KeySystem"
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
     
-    local main = Instance.new("Frame")
-    main.Size = UDim2.new(0, 300, 0, 150)
-    main.Position = UDim2.new(0.5, -150, 0.5, -75)
-    main.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    main.Parent = gui
+    -- Главное окно (закруглённое)
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 380, 0, 220)
+    mainFrame.Position = UDim2.new(0.5, -190, 0.5, -110)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+    mainFrame.BackgroundTransparency = 0
+    mainFrame.BorderSizePixel = 0
+    mainFrame.ClipsDescendants = true
+    mainFrame.Parent = screenGui
     
+    -- Скругление углов
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = mainFrame
+    
+    -- Обводка
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(60, 60, 70)
+    stroke.Thickness = 1
+    stroke.Parent = mainFrame
+    
+    -- Верхняя панель
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, 50)
+    topBar.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    topBar.BorderSizePixel = 0
+    topBar.Parent = mainFrame
+    
+    local topCorner = Instance.new("UICorner")
+    topCorner.CornerRadius = UDim.new(0, 12)
+    topCorner.Parent = topBar
+    
+    -- Заголовок "KEY"
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.Text = "Введите ключ"
-    title.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    title.Size = UDim2.new(1, 0, 1, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "KEY"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.Parent = main
+    title.TextSize = 24
+    title.Font = Enum.Font.GothamBold
+    title.Parent = topBar
     
-    local input = Instance.new("TextBox")
-    input.Size = UDim2.new(0.8, 0, 0, 35)
-    input.Position = UDim2.new(0.1, 0, 0, 50)
-    input.PlaceholderText = "XXXXX-XXXXX-XXXXX"
-    input.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-    input.TextColor3 = Color3.fromRGB(255, 255, 255)
-    input.Parent = main
+    -- Иконка замка
+    local lockIcon = Instance.new("TextLabel")
+    lockIcon.Size = UDim2.new(0, 40, 1, 0)
+    lockIcon.Position = UDim2.new(0, 10, 0, 0)
+    lockIcon.BackgroundTransparency = 1
+    lockIcon.Text = "🔐"
+    lockIcon.TextSize = 22
+    lockIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lockIcon.Parent = topBar
     
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.4, 0, 0, 35)
-    btn.Position = UDim2.new(0.3, 0, 0, 95)
-    btn.Text = "Войти"
-    btn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Parent = main
+    -- Поле ввода ключа
+    local inputBox = Instance.new("TextBox")
+    inputBox.Size = UDim2.new(0.8, 0, 0, 45)
+    inputBox.Position = UDim2.new(0.1, 0, 0, 75)
+    inputBox.PlaceholderText = "XXXX-XXXX-XXXX-XXXX"
+    inputBox.Text = ""
+    inputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    inputBox.TextSize = 16
+    inputBox.Font = Enum.Font.Gotham
+    inputBox.ClearTextOnFocus = false
+    inputBox.Parent = mainFrame
     
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, 0, 0, 25)
-    status.Position = UDim2.new(0, 0, 0, 135)
-    status.Text = ""
-    status.BackgroundTransparency = 1
-    status.TextColor3 = Color3.fromRGB(200, 200, 200)
-    status.TextSize = 12
-    status.Parent = main
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.CornerRadius = UDim.new(0, 8)
+    inputCorner.Parent = inputBox
     
-    btn.MouseButton1Click:Connect(function()
-        if validateLicense(input.Text) then
-            status.Text = "✅ Успешно!"
-            status.TextColor3 = Color3.fromRGB(0, 255, 0)
-            task.wait(0.5)
+    -- Кнопка подтверждения
+    local submitBtn = Instance.new("TextButton")
+    submitBtn.Size = UDim2.new(0.4, 0, 0, 45)
+    submitBtn.Position = UDim2.new(0.3, 0, 0, 140)
+    submitBtn.Text = "ВОЙТИ"
+    submitBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
+    submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    submitBtn.TextSize = 16
+    submitBtn.Font = Enum.Font.GothamBold
+    submitBtn.Parent = mainFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = submitBtn
+    
+    -- Статус
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(1, 0, 0, 30)
+    statusLabel.Position = UDim2.new(0, 0, 0, 190)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = ""
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.TextSize = 12
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.Parent = mainFrame
+    
+    -- Анимация кнопки
+    submitBtn.MouseEnter:Connect(function()
+        submitBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    end)
+    
+    submitBtn.MouseLeave:Connect(function()
+        submitBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
+    end)
+    
+    -- Обработка ввода ключа
+    submitBtn.MouseButton1Click:Connect(function()
+        local enteredKey = inputBox.Text
+        if validateLicense(enteredKey) then
+            statusLabel.Text = "✅ ДОСТУП РАЗРЕШЁН"
+            statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            submitBtn.Visible = false
+            inputBox.Visible = false
+            task.wait(1)
             keyAccepted = true
-            gui:Destroy()
+            screenGui:Destroy()
         else
-            status.Text = "❌ Неверный ключ"
-            status.TextColor3 = Color3.fromRGB(255, 0, 0)
-            input.Text = ""
+            statusLabel.Text = "❌ НЕВЕРНЫЙ КЛЮЧ"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            inputBox.Text = ""
+            -- Эффект встряски
+            local originalPos = mainFrame.Position
+            for i = 1, 4 do
+                mainFrame.Position = UDim2.new(0.5, -190 + (i % 2 == 0 and 5 or -5), 0.5, -110)
+                task.wait(0.02)
+            end
+            mainFrame.Position = originalPos
+            task.wait(0.5)
+            statusLabel.Text = ""
         end
     end)
 end
@@ -235,36 +360,38 @@ AllTab:CreateSection(" ")
 -- ===== OTHER SECTION (Infinite Yield) =====
 AllTab:CreateSection("Other")
 
--- Infinite Yield кнопка (рабочая)
-AllTab:CreateButton({
-    Name = "Infinite Yield",
-    Callback = function()
-        local success, err = pcall(function()
-            local iy = loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source.lua'))
-            if iy then
-                iy()
-                Rayfield:Notify({
-                    Title = "Infinite Yield",
-                    Content = "Загружен!",
-                    Duration = 2
-                })
-            else
-                Rayfield:Notify({
-                    Title = "Ошибка",
-                    Content = "Не удалось загрузить!",
-                    Duration = 2
-                })
-            end
-        end)
-        if not success then
-            Rayfield:Notify({
-                Title = "Ошибка",
-                Content = "Не удалось загрузить!",
-                Duration = 2
-            })
-        end
+-- Infinite Yield (ИСПРАВЛЕНАЯ ВЕРСИЯ - без ошибок)
+local iyLoaded = false
+local iyButtonPressed = false
+
+local function loadInfiniteYield()
+    if iyLoaded then
+        Rayfield:Notify({ Title = "Infinite Yield", Content = "Уже загружен!", Duration = 2 })
+        return
     end
-})
+    if iyButtonPressed then
+        Rayfield:Notify({ Title = "Infinite Yield", Content = "Можно нажать только 1 раз!", Duration = 2 })
+        return
+    end
+    iyButtonPressed = true
+    
+    Rayfield:Notify({ Title = "Infinite Yield", Content = "Загрузка...", Duration = 2 })
+    
+    -- ПРОСТАЯ ЗАГРУЗКА БЕЗ ЛИШНИХ ПРОВЕРОК
+    local success = pcall(function()
+        local scriptContent = game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source')
+        loadstring(scriptContent)()
+        iyLoaded = true
+        Rayfield:Notify({ Title = "Infinite Yield", Content = "Успешно загружен!", Duration = 3 })
+    end)
+    
+    if not success then
+        iyButtonPressed = false
+        Rayfield:Notify({ Title = "Infinite Yield", Content = "Ошибка загрузки! Попробуйте позже", Duration = 3 })
+    end
+end
+
+AllTab:CreateButton({ Name = "Infinite Yield", Callback = loadInfiniteYield })
 
 print("[СКРИПТ] Загружен!")
 Rayfield:Notify({ Title = "Скрипт", Content = "Загружен!", Duration = 3 })
