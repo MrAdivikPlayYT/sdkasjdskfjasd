@@ -25,8 +25,100 @@ end
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
+-- Сохранение настроек
+local Settings = {
+    ShowAllTowers = false
+}
+
+local function loadSettings()
+    local success, data = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(readfile("SkibidiDefenseSettings.json"))
+    end)
+    if success and data then
+        Settings.ShowAllTowers = data.ShowAllTowers or false
+    end
+end
+
+local function saveSettings()
+    pcall(function()
+        writefile("SkibidiDefenseSettings.json", game:GetService("HttpService"):JSONEncode({
+            ShowAllTowers = Settings.ShowAllTowers
+        }))
+    end)
+end
+
+loadSettings()
+
+-- Функция для показа всех башен (Towers) - БЕЗ СПАМА
+local showAllTowersConnection = nil
+local originalVisibility = {}
+local isUpdating = false
+
+local function showAllTowers()
+    if isUpdating then return end
+    isUpdating = true
+    
+    local success, err = pcall(function()
+        local player = game.Players.LocalPlayer
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+        
+        local main = playerGui:FindFirstChild("Main")
+        if not main then return end
+        
+        for _, grid in ipairs(main:GetDescendants()) do
+            if grid.Name == "Grid" then
+                for _, button in ipairs(grid:GetDescendants()) do
+                    if button:IsA("TextButton") or button:IsA("ImageButton") then
+                        if originalVisibility[button] == nil then
+                            originalVisibility[button] = button.Visible
+                        end
+                        if button.Visible ~= true then
+                            button.Visible = true
+                        end
+                    end
+                end
+                if grid.Visible ~= true then
+                    grid.Visible = true
+                end
+            end
+        end
+    end)
+    
+    isUpdating = false
+end
+
+local function restoreOriginalTowers()
+    for button, visible in pairs(originalVisibility) do
+        pcall(function()
+            if button.Visible ~= visible then
+                button.Visible = visible
+            end
+        end)
+    end
+    originalVisibility = {}
+end
+
+local function startShowAllTowers()
+    if showAllTowersConnection then return end
+    showAllTowers()
+    showAllTowersConnection = game:GetService("RunService").Stepped:Connect(function()
+        if Settings.ShowAllTowers then
+            showAllTowers()
+        end
+    end)
+end
+
+local function stopShowAllTowers()
+    if showAllTowersConnection then
+        showAllTowersConnection:Disconnect()
+        showAllTowersConnection = nil
+    end
+    restoreOriginalTowers()
+end
+
 local Window = Rayfield:CreateWindow({
-    Name="Skibidi Script",
+    Name="Skibidi Defense Script (Private)",
     LoadingTitle="Loading",
     LoadingSubtitle="Ready",
     ConfigurationSaving={Enabled=false},
@@ -59,6 +151,31 @@ Tab:CreateButton({
         isOpen=not isOpen
         for _,gui in ipairs(findWarlordSignGUI()) do
             gui.Enabled=isOpen
+        end
+    end
+})
+
+-- ТУМБЛЕР: Show All Towers (без эмодзи)
+Tab:CreateToggle({
+    Name="Show All Towers in Game",
+    CurrentValue=Settings.ShowAllTowers,
+    Callback=function(v)
+        Settings.ShowAllTowers = v
+        saveSettings()
+        if v then
+            startShowAllTowers()
+            Rayfield:Notify({
+                Title="Show All Towers",
+                Content="Enabled - All towers are visible",
+                Duration=2
+            })
+        else
+            stopShowAllTowers()
+            Rayfield:Notify({
+                Title="Show All Towers",
+                Content="Disabled - Towers restored",
+                Duration=2
+            })
         end
     end
 })
@@ -232,7 +349,6 @@ local function teleportToTradingPlaza()
 end
 Tab:CreateButton({ Name = "Trading Plaza", Callback = teleportToTradingPlaza })
 
--- КНОПКА HappyBirtchDay с телепортом на 93311267472350
 local function teleportToHappyBirtchDay()
     pcall(function()
         game:GetService("TeleportService"):Teleport(93311267472350, game.Players.LocalPlayer)
@@ -252,7 +368,7 @@ local function startAntiAFK()
     if antiAFKEnabled then return end
     antiAFKEnabled = true
     loadstring(game:HttpGet("https://raw.githubusercontent.com/hassanxzayn-lua/Anti-afk/main/antiafkbyhassanxzyn"))()
-    antiAFKButton:Set("Name", "✅ Anti AFK")
+    antiAFKButton:Set("Name", "Anti AFK [ON]")
     Rayfield:Notify({ Title="Anti AFK", Content="Enabled", Duration=2 })
 end
 
@@ -261,6 +377,25 @@ antiAFKButton = Tab:CreateButton({
     Callback=function()
         if not antiAFKEnabled then
             startAntiAFK()
+        end
+    end
+})
+
+-- DEX (исправлен баг с названием)
+local dexLoaded = false
+
+local function loadDex()
+    if dexLoaded then return end
+    dexLoaded = true
+    task.spawn(xpcall, assert(loadstring(game:HttpGet('https://raw.githubusercontent.com/PigManul/gDex/refs/heads/main/main.lua')), warn))
+    Rayfield:Notify({ Title="Dex", Content="Loaded successfully!", Duration=2 })
+end
+
+Tab:CreateButton({
+    Name="Dex Explorer",
+    Callback=function()
+        if not dexLoaded then
+            loadDex()
         end
     end
 })
@@ -279,4 +414,10 @@ Tab:CreateButton({
     end
 })
 
-Rayfield:Notify({ Title="Loaded", Content="Ready", Duration=2 })
+-- Автозапуск Show All Towers если был включен
+if Settings.ShowAllTowers then
+    task.wait(2)
+    startShowAllTowers()
+end
+
+Rayfield:Notify({ Title="Loaded", Content="Skibidi Defense Script (Private)", Duration=2 })
