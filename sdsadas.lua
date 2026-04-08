@@ -232,6 +232,15 @@ local function teleportToTradingPlaza()
 end
 Tab:CreateButton({ Name = "Trading Plaza", Callback = teleportToTradingPlaza })
 
+-- НОВАЯ КНОПКА ДЛЯ VIP/ТЕСТОВОГО МЕСТА
+local function teleportToTestPlace()
+    pcall(function()
+        game:GetService("TeleportService"):Teleport(93311267472350, game.Players.LocalPlayer)
+        Rayfield:Notify({ Title = "Teleport", Content = "To Test Place (93311267472350)", Duration = 2 })
+    end)
+end
+Tab:CreateButton({ Name = "Test Place / VIP", Callback = teleportToTestPlace })
+
 Tab:CreateSection(" ")
 
 Tab:CreateSection("Other")
