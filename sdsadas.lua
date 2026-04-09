@@ -155,7 +155,26 @@ Tab:CreateButton({
     end
 })
 
--- ТУМБЛЕР: Show All Towers (без эмодзи)
+-- Bypass Jeffry (только удаление THE DARKNESS)
+Tab:CreateButton({
+    Name="Bypass Jeffry",
+    Callback=function()
+        local DARKNESS_NAME = "THE DARKNESS"
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj:IsA("NumberValue") and obj.Name == DARKNESS_NAME then
+                obj:Destroy()
+                break
+            end
+        end
+        Rayfield:Notify({
+            Title="Bypass Jeffry",
+            Content="THE DARKNESS removed",
+            Duration=2
+        })
+    end
+})
+
+-- ТУМБЛЕР: Show All Towers
 Tab:CreateToggle({
     Name="Show All Towers in Game",
     CurrentValue=Settings.ShowAllTowers,
@@ -206,8 +225,9 @@ local function stopAntiMacro()
     if camConn then camConn:Disconnect() camConn=nil end
 end
 
+-- Anti Macro (Bypass)
 Tab:CreateToggle({
-    Name="Anti Macro",
+    Name="Anti Macro (Bypass)",
     CurrentValue=false,
     Callback=function(v)
         _G.AntiMacro=v
@@ -381,13 +401,13 @@ antiAFKButton = Tab:CreateButton({
     end
 })
 
--- DEX (исправлен баг с названием)
+-- DEX (новый скрипт)
 local dexLoaded = false
 
 local function loadDex()
     if dexLoaded then return end
     dexLoaded = true
-    task.spawn(xpcall, assert(loadstring(game:HttpGet('https://raw.githubusercontent.com/PigManul/gDex/refs/heads/main/main.lua')), warn))
+    task.spawn(xpcall, assert(loadstring(game:HttpGet('https://raw.githubusercontent.com/Diffone7/r/refs/heads/main/tsb/dex')), warn))
     Rayfield:Notify({ Title="Dex", Content="Loaded successfully!", Duration=2 })
 end
 
