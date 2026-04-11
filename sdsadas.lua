@@ -58,7 +58,7 @@ local function showAllTowers()
     if isUpdating then return end
     isUpdating = true
     
-    local success, err = pcall(function()
+    pcall(function()
         local player = game.Players.LocalPlayer
         local playerGui = player:FindFirstChild("PlayerGui")
         if not playerGui then return end
@@ -157,7 +157,7 @@ Tab:CreateButton({
 
 -- Bypass Jeffry (только удаление THE DARKNESS)
 Tab:CreateButton({
-    Name="Bypass Jeffry",
+    Name="Bypass Jeffry (IF YOU NOT HAS UNIT)",
     Callback=function()
         local DARKNESS_NAME = "THE DARKNESS"
         for _, obj in ipairs(game:GetDescendants()) do
@@ -199,10 +199,31 @@ Tab:CreateToggle({
     end
 })
 
+Tab:CreateSection("Trading Plaza")
+
+local showImageButtons = false
+
+Tab:CreateToggle({
+    Name = "Show RNG In Plaza",
+    CurrentValue = false,
+    Callback = function(v)
+        showImageButtons = v
+        local rng = game.Players.LocalPlayer.PlayerGui:FindFirstChild("RNG")
+        if rng then
+            -- НЕ трогаем rng.Enabled
+            for _, child in ipairs(rng:GetDescendants()) do
+                if child:IsA("ImageButton") and child.Name ~= "PotionTracker" then
+                    child.Visible = showImageButtons
+                end
+            end
+        end
+    end
+})
+
 Tab:CreateSection("Game")
 
 local function getHRP()
-    local c=game.Players.LocalPlayer.Character
+    local c = game.Players.LocalPlayer.Character
     return c and c:FindFirstChild("HumanoidRootPart")
 end
 
