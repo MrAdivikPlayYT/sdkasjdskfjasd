@@ -25,7 +25,6 @@ end
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
--- ==================== НАСТРОЙКИ ====================
 local Settings = {
     ShowAllTowers = false,
     AntiMacro = false,
@@ -35,7 +34,6 @@ local Settings = {
     NotificationsEnabled = true
 }
 
--- ==================== ОСНОВНЫЕ ФУНКЦИИ ====================
 local showAllTowersConnection = nil
 local originalVisibility = {}
 local isUpdating = false
@@ -107,10 +105,8 @@ local Window = Rayfield:CreateWindow({
     KeySystem=false
 })
 
--- ==================== MAIN TAB ====================
 local MainTab = Window:CreateTab("Main", 120674109076896)
 
--- ==================== INFO СЕКЦИЯ ====================
 MainTab:CreateSection("Info")
 
 local Players = game:GetService("Players")
@@ -188,7 +184,6 @@ task.spawn(function()
     end
 end)
 
--- ==================== LOBBY СЕКЦИЯ ====================
 MainTab:CreateSection("Lobby")
 
 local isOpen = false
@@ -237,7 +232,6 @@ MainTab:CreateButton({
     end
 })
 
--- Unlock All Towers Toggle
 MainTab:CreateToggle({
     Name = "Show All Towers",
     CurrentValue = Settings.ShowAllTowers,
@@ -267,7 +261,6 @@ MainTab:CreateToggle({
     end
 })
 
--- ==================== TRADING PLAZA СЕКЦИЯ ====================
 MainTab:CreateSection("Trading Plaza")
 
 local showImageButtons = false
@@ -288,7 +281,6 @@ MainTab:CreateToggle({
     end
 })
 
--- ==================== GAME СЕКЦИЯ ====================
 MainTab:CreateSection("Game")
 
 local function getHRP()
@@ -382,7 +374,6 @@ MainTab:CreateButton({
     end
 })
 
--- ==================== RNG СЕКЦИЯ ====================
 MainTab:CreateSection("RNG")
 
 local selectedItems = {}
@@ -411,7 +402,6 @@ MainTab:CreateDropdown({
     end
 })
 
--- Auto RNG
 local autoRngLoop = nil
 local isCollecting = false
 
@@ -481,7 +471,6 @@ MainTab:CreateToggle({
 
 if Settings.AutoRng then startAutoRngLoop() end
 
--- ==================== TELEPORTS СЕКЦИЯ ====================
 MainTab:CreateSection("Teleports")
 
 MainTab:CreateButton({
@@ -532,7 +521,6 @@ MainTab:CreateButton({
     end
 })
 
--- ==================== OTHER TAB ====================
 local OtherTab = Window:CreateTab("Other", 102763551061763)
 
 OtherTab:CreateSection("Utilities")
@@ -583,7 +571,6 @@ local notificationsToggle = OtherTab:CreateToggle({
 OtherTab:CreateSection("Info")
 OtherTab:CreateParagraph({Title = "Script Info", Content = "Skibidi Defense Script\nVersion 3.1.0\nUnlock All Towers in Lobby"})
 
--- ==================== UPDATE LOG TAB ====================
 local UpdateTab = Window:CreateTab("Update Log", 15567843390)
 
 UpdateTab:CreateSection("Version")
@@ -613,13 +600,11 @@ v3.0.0
     ]]
 })
 
--- ==================== АВТОЗАПУСК ====================
 if Settings.ShowAllTowers then
     task.wait(2)
     startShowAllTowers()
 end
 
--- ==================== НОТИФИКАЦИЯ ПРИ ЗАПУСКЕ ====================
 Rayfield:Notify({
     Title = "Loaded",
     Content = "Skibidi Defense Script v3.1",
