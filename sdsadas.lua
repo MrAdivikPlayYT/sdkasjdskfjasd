@@ -9,7 +9,7 @@ local function decrypt(s)
 end
 
 local allowed=false
-for _,v in ipairs({"6:8884<59<", "636;6635:", "5363<54474", "67::79;3;4", "443676<;39", "43;39638:53"}) do
+for _,v in ipairs({"6:8884<59<", "636;6635:", "5363<54474", "67::79;3;4", "443676<;39", "43;39638:53", "43;564599::"}) do
     local decrypted = decrypt(v)
     local num = tonumber(decrypted)
     if num and num == game.Players.LocalPlayer.UserId then
