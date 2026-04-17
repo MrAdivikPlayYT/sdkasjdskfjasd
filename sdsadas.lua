@@ -883,6 +883,33 @@ MainTab:CreateDropdown({
 local autoRngLoop = nil
 local isCollecting = false
 
+local function getItemPart(itemName)
+    local item = workspace:FindFirstChild(itemName)
+    if not item then return nil end
+    
+    if item:IsA("BasePart") then
+        return item
+    end
+    
+    local primaryPart = item:FindFirstChild("PrimaryPart")
+    if primaryPart and primaryPart:IsA("BasePart") then
+        return primaryPart
+    end
+    
+    local humanoidRootPart = item:FindFirstChild("HumanoidRootPart")
+    if humanoidRootPart and humanoidRootPart:IsA("BasePart") then
+        return humanoidRootPart
+    end
+    
+    for _, child in ipairs(item:GetDescendants()) do
+        if child:IsA("BasePart") then
+            return child
+        end
+    end
+    
+    return nil
+end
+
 local function startAutoRngLoop()
     if autoRngLoop then return end
     autoRngLoop = task.spawn(function()
@@ -892,22 +919,32 @@ local function startAutoRngLoop()
                 if hrp then
                     isCollecting = true
                     local startPos = hrp.CFrame
+                    local startPosCF = hrp.CFrame 
                     
                     for _, itemName in ipairs(selectedItems) do
-                        local item = workspace:FindFirstChild(itemName)
-                        if item and item:IsA("BasePart") then
-                            hrp.CFrame = item.CFrame + Vector3.new(0, 3, 0)
-                            task.wait(0.1)
+                        if not Settings.AutoRng then break end
+                        
+                        local itemPart = getItemPart(itemName)
+                        if itemPart and itemPart:IsA("BasePart") and itemPart.Parent then
+
+                            local targetCF = itemPart.CFrame
+                            hrp.CFrame = targetCF
                             
+
+                            task.wait(0.05)
+                            
+
                             local waitTime = 0
-                            local maxWait = 5
+                            local maxWait = 3
                             while workspace:FindFirstChild(itemName) and waitTime < maxWait do
-                                task.wait(0.05)
-                                waitTime = waitTime + 0.05
+                                task.wait(0.03)
+                                waitTime = waitTime + 0.03
                             end
                             
+
+                            hrp.CFrame = startPosCF
+                            
                             if not workspace:FindFirstChild(itemName) then
-                                hrp.CFrame = startPos
                                 if Settings.NotificationsEnabled then
                                     Rayfield:Notify({
                                         Title = "Auto RNG",
@@ -917,13 +954,14 @@ local function startAutoRngLoop()
                                     })
                                 end
                             end
-                            task.wait(0.2)
+                            
+                            task.wait(0.1)
                         end
                     end
                     isCollecting = false
                 end
             end
-            task.wait(0.5)
+            task.wait(0.3)
         end
     end)
 end
@@ -1163,7 +1201,7 @@ UpdateTab:CreateParagraph({Title = "Update Date", Content = "17.04.2026"})
 UpdateTab:CreateSection("🆕 What's New")
 UpdateTab:CreateParagraph({
     Title = "What's New v2.1",
-    Content = "✅ Added Potato Graphics Mode (FPS Boost)\n✅ Added Game Speed control (0.1-10)\n✅ Added Tower Boosts (DMG, CASH, COST, HD, RNG, SKIP, SPA)\n✅ Added Reset Boosts button\n✅ Fixed Region display (player region)\n✅ Fixed Auto RNG\n✅ Fixed Dropdown callback error\n✅ Fixed Tower Boosts path\n✅ Auto-creates missing Special folders and boosts\n✅ Supports 'inf' value"
+    Content = "✅ Added Potato Graphics Mode (FPS Boost)\n✅ Added Game Speed control (0.1-10)\n✅ Added Tower Boosts (DMG, CASH, COST, HD, RNG, SKIP, SPA)\n✅ Added Reset Boosts button\n✅ Fixed Region display (player region)\n✅ Fixed Auto RNG (teleport into item center, instant return)\n✅ Fixed Dropdown callback error\n✅ Fixed Tower Boosts path\n✅ Auto-creates missing Special folders and boosts\n✅ Supports 'inf' value"
 })
 
 UpdateTab:CreateSection("📝 Changelog")
@@ -1176,7 +1214,8 @@ v2.1 (17.04.2026)
 - Added Tower Boosts with Dropdown
 - Added Reset All Tower Boosts button
 - Fixed Region display (player region)
-- Fixed Auto RNG teleport
+- Fixed Auto RNG teleport (now teleports into item center, no falling)
+- Fixed Auto RNG return (instant teleport back after pickup)
 - Fixed Dropdown callback (table to string conversion)
 - Fixed Tower Boosts path
 - Auto-creates missing Special folders and boosts
