@@ -34,7 +34,11 @@ local Settings = {
     NotificationsEnabled = true,
     PotatoGraphics = false,
     GameSpeed = 1,
-    SelectedBoostType = "DMG"
+    SelectedBoostType = "DMG",
+    WebhookEnabled = false,
+    WebhookURL = "",
+    WebhookDisplayFields = {"Item"},
+    WebhookSelectedItems = {"JackpotPotion"}
 }
 
 local showAllTowersConnection = nil
@@ -44,6 +48,112 @@ local isUpdating = false
 local originalBoosts = {}
 local createdSpecial = {}
 local createdBoostsList = {}
+
+local webhookCooldown = false
+
+local function sendWebhook(itemName)
+    if not Settings.WebhookEnabled or Settings.WebhookURL == "" then return end
+    if webhookCooldown then return end
+    
+    webhookCooldown = true
+    task.spawn(function()
+        task.wait(2)
+        webhookCooldown = false
+    end)
+    
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local gameId = game.PlaceId
+    local gameName = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(gameId).Name end) and game:GetService("MarketplaceService"):GetProductInfo(gameId).Name or "Unknown"
+    local playerCount = #Players:GetPlayers()
+    local maxPlayers = Players.MaxPlayers
+    local timeNow = os.date("%H:%M:%S")
+    
+    local function code(v)
+        return "```"..tostring(v).."```"
+    end
+    
+    local bigItem = "```🔥 "..string.upper(itemName).." 🔥```"
+    
+    local fields = {}
+    
+    for _, field in ipairs(Settings.WebhookDisplayFields) do
+        if field == "Item" then
+            table.insert(fields, {
+                name = "🎁 Item",
+                value = bigItem,
+                inline = false
+            })
+        elseif field == "Username" then
+            table.insert(fields, {
+                name = "👤 Username",
+                value = code(player.Name),
+                inline = true
+            })
+        elseif field == "GameName" then
+            table.insert(fields, {
+                name = "🎮 Game Name",
+                value = code(gameName),
+                inline = true
+            })
+        elseif field == "GameID" then
+            table.insert(fields, {
+                name = "🆔 Game ID",
+                value = code(gameId),
+                inline = true
+            })
+        elseif field == "Players" then
+            table.insert(fields, {
+                name = "👥 Players",
+                value = code(playerCount .. "/" .. maxPlayers),
+                inline = true
+            })
+        elseif field == "Time" then
+            table.insert(fields, {
+                name = "🕒 Server Time",
+                value = code(timeNow),
+                inline = true
+            })
+        end
+    end
+    
+    table.insert(fields, {
+        name = "📡 Log",
+        value = code(timeNow),
+        inline = false
+    })
+    
+    local data = {
+        username = "Skibidi Defense Script",
+        avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png",
+        embeds = {{
+            author = {
+                name = "Skibidi Defense Script",
+                icon_url = "https://cdn.discordapp.com/embed/avatars/0.png"
+            },
+            title = "🚀 Skibidi Defense (Private)",
+            color = 65280,
+            fields = fields
+        }}
+    }
+    
+    local json = game:GetService("HttpService"):JSONEncode(data)
+    
+    local request = http_request or request or (syn and syn.request) or (fluxus and fluxus.request)
+    
+    if request then
+        pcall(function()
+            request({
+                Url = Settings.WebhookURL,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
+                Body = json
+            })
+        end)
+    end
+end
 
 local function getTowerData()
     local scripted = workspace:FindFirstChild("Scripted")
@@ -113,7 +223,6 @@ local function applyBoost(boostType, value)
         if tower:IsA("Folder") then
             local boosters = tower:FindFirstChild("Boosters")
             if not boosters then
-                -- skip
             else
                 local special = boosters:FindFirstChild("Special")
                 if not special then
@@ -170,7 +279,6 @@ local function resetBoosts()
         if tower:IsA("Folder") then
             local boosters = tower:FindFirstChild("Boosters")
             if not boosters then
-                -- skip
             else
                 local special = boosters:FindFirstChild("Special")
                 if special then
@@ -710,7 +818,7 @@ MainTab:CreateButton({
     end
 })
 
-MainTab:CreateToggle({
+local Toggle_ShowAllTowers = MainTab:CreateToggle({
     Name = "Show All Towers",
     CurrentValue = Settings.ShowAllTowers,
     Callback = function(v)
@@ -787,7 +895,7 @@ function stopAntiMacro()
     end
 end
 
-MainTab:CreateToggle({
+local Toggle_AntiMacro = MainTab:CreateToggle({
     Name = "Anti Macro (Bypass)",
     CurrentValue = Settings.AntiMacro,
     Callback = function(v)
@@ -918,7 +1026,6 @@ local function startAutoRngLoop()
                 local hrp = getHRP()
                 if hrp then
                     isCollecting = true
-                    local startPos = hrp.CFrame
                     local startPosCF = hrp.CFrame 
                     
                     for _, itemName in ipairs(selectedItems) do
@@ -926,23 +1033,17 @@ local function startAutoRngLoop()
                         
                         local itemPart = getItemPart(itemName)
                         if itemPart and itemPart:IsA("BasePart") and itemPart.Parent then
-
                             local targetCF = itemPart.CFrame
                             hrp.CFrame = targetCF
                             
-
                             task.wait(0.05)
                             
-
                             local waitTime = 0
                             local maxWait = 3
                             while workspace:FindFirstChild(itemName) and waitTime < maxWait do
                                 task.wait(0.03)
                                 waitTime = waitTime + 0.03
                             end
-                            
-
-                            hrp.CFrame = startPosCF
                             
                             if not workspace:FindFirstChild(itemName) then
                                 if Settings.NotificationsEnabled then
@@ -953,8 +1054,15 @@ local function startAutoRngLoop()
                                         Image = 10885652171
                                     })
                                 end
+                                for _, webhookItem in ipairs(Settings.WebhookSelectedItems) do
+                                    if itemName == webhookItem then
+                                        sendWebhook(itemName)
+                                        break
+                                    end
+                                end
                             end
                             
+                            hrp.CFrame = startPosCF
                             task.wait(0.1)
                         end
                     end
@@ -966,7 +1074,7 @@ local function startAutoRngLoop()
     end)
 end
 
-MainTab:CreateToggle({
+local Toggle_AutoRng = MainTab:CreateToggle({
     Name = "Auto RNG",
     CurrentValue = Settings.AutoRng,
     Callback = function(v)
@@ -1076,7 +1184,7 @@ OtherTab:CreateButton({Name = "Infinite Yield", Callback = function() loadstring
 
 OtherTab:CreateSection("Settings")
 
-local notificationsToggle = OtherTab:CreateToggle({
+local Toggle_NotificationsEnabled = OtherTab:CreateToggle({
     Name = "Show Notifications",
     CurrentValue = Settings.NotificationsEnabled,
     Callback = function(v)
@@ -1085,7 +1193,7 @@ local notificationsToggle = OtherTab:CreateToggle({
 })
 
 OtherTab:CreateSection("Info")
-OtherTab:CreateParagraph({Title = "Script Info", Content = "Skibidi Defense Script\nVersion 2.1\nUnlock All Towers in Lobby"})
+OtherTab:CreateParagraph({Title = "Script Info", Content = "Skibidi Defense Script\nVersion 2.2\nUnlock All Towers in Lobby"})
 
 local VisualTab = Window:CreateTab("Visual", 10885652171)
 
@@ -1096,7 +1204,7 @@ VisualTab:CreateParagraph({
     Content = "Maximum FPS Boost for low-end PCs\n\n• Disables shadows\n• Removes particles, trails & beams\n• Turns all materials to Plastic\n• Disables water effects\n• Disables bloom & post-processing"
 })
 
-VisualTab:CreateToggle({
+local Toggle_PotatoGraphics = VisualTab:CreateToggle({
     Name = "Potato Graphics Mode",
     CurrentValue = Settings.PotatoGraphics,
     Callback = function(v)
@@ -1190,85 +1298,456 @@ VisualTab:CreateButton({
     end
 })
 
+local WebhookTab = Window:CreateTab("WebHook", 12465540157)
+
+WebhookTab:CreateSection("Webhook Settings")
+
+local Toggle_WebhookEnabled = WebhookTab:CreateToggle({
+    Name = "Enable Webhook",
+    CurrentValue = Settings.WebhookEnabled,
+    Callback = function(v)
+        Settings.WebhookEnabled = v
+    end
+})
+
+WebhookTab:CreateInput({
+    Name = "Webhook URL",
+    PlaceholderText = "https://discord.com/api/webhooks/...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        Settings.WebhookURL = Text
+    end
+})
+
+WebhookTab:CreateSection("Display Fields")
+
+local webhookDisplayFields = Settings.WebhookDisplayFields or {"Item"}
+local displayFieldsText = WebhookTab:CreateParagraph({Title = "Selected Fields", Content = table.concat(webhookDisplayFields, ", ")})
+
+local function updateDisplayFieldsText()
+    displayFieldsText:Set({Title = "Selected Fields", Content = #webhookDisplayFields > 0 and table.concat(webhookDisplayFields, ", ") or "None"})
+    Settings.WebhookDisplayFields = webhookDisplayFields
+end
+
+WebhookTab:CreateDropdown({
+    Name = "Fields to Display",
+    Options = {"Item", "Username", "GameName", "GameID", "Players", "Time"},
+    CurrentOption = webhookDisplayFields,
+    MultipleOptions = true,
+    Callback = function(opt)
+        webhookDisplayFields = {}
+        if typeof(opt) == "table" then
+            for _, v in ipairs(opt) do table.insert(webhookDisplayFields, v) end
+        else
+            table.insert(webhookDisplayFields, opt)
+        end
+        updateDisplayFieldsText()
+    end
+})
+
+WebhookTab:CreateSection("Items to Track")
+
+local webhookSelectedItems = Settings.WebhookSelectedItems or {"JackpotPotion"}
+local webhookSelectedText = WebhookTab:CreateParagraph({Title = "Tracked Items", Content = #webhookSelectedItems > 0 and table.concat(webhookSelectedItems, ", ") or "None"})
+
+local function updateWebhookSelectedText()
+    local content = #webhookSelectedItems > 0 and table.concat(webhookSelectedItems, ", ") or "None"
+    webhookSelectedText:Set({Title = "Tracked Items", Content = content})
+    Settings.WebhookSelectedItems = webhookSelectedItems
+end
+
+WebhookTab:CreateDropdown({
+    Name = "Items to Track",
+    Options = {"JackpotPotion", "Luck2", "Time2", "Luck3", "Time3", "Remover"},
+    CurrentOption = webhookSelectedItems,
+    MultipleOptions = true,
+    Callback = function(opt)
+        webhookSelectedItems = {}
+        if typeof(opt) == "table" then
+            for _, v in ipairs(opt) do table.insert(webhookSelectedItems, v) end
+        else
+            table.insert(webhookSelectedItems, opt)
+        end
+        updateWebhookSelectedText()
+    end
+})
+
+WebhookTab:CreateButton({
+    Name = "Test Webhook",
+    Callback = function()
+        if Settings.WebhookEnabled and Settings.WebhookURL ~= "" then
+            sendWebhook("TEST")
+            Rayfield:Notify({
+                Title = "Webhook",
+                Content = "Test message sent!",
+                Duration = 2,
+                Image = 10885652171
+            })
+        else
+            Rayfield:Notify({
+                Title = "Webhook",
+                Content = "Enable webhook and set URL first!",
+                Duration = 2,
+                Image = 10885652171
+            })
+        end
+    end
+})
+
 local UpdateTab = Window:CreateTab("Update Log", 15567843390)
 
 UpdateTab:CreateSection("📌 Version")
-UpdateTab:CreateParagraph({Title = "Version", Content = "2.1"})
+UpdateTab:CreateParagraph({Title = "Version", Content = "2.2"})
 
 UpdateTab:CreateSection("📅 Update Date")
-UpdateTab:CreateParagraph({Title = "Update Date", Content = "17.04.2026"})
+UpdateTab:CreateParagraph({Title = "Update Date", Content = "21.04.2026"})
 
 UpdateTab:CreateSection("🆕 What's New")
 UpdateTab:CreateParagraph({
-    Title = "What's New v2.1",
-    Content = "✅ Added Potato Graphics Mode (FPS Boost)\n✅ Added Game Speed control (0.1-10)\n✅ Added Tower Boosts (DMG, CASH, COST, HD, RNG, SKIP, SPA)\n✅ Added Reset Boosts button\n✅ Fixed Region display (player region)\n✅ Fixed Auto RNG (teleport into item center, instant return)\n✅ Fixed Dropdown callback error\n✅ Fixed Tower Boosts path\n✅ Auto-creates missing Special folders and boosts\n✅ Supports 'inf' value"
+    Title = "What's New v2.2",
+    Content = "✅ Added Webhook System with embed/table design\n✅ Webhook settings saved/loaded via config\n✅ Dropdown for selecting display fields\n✅ Dropdown for selecting items to track\n✅ Fixed UI toggle sync on config load"
 })
 
 UpdateTab:CreateSection("📝 Changelog")
 UpdateTab:CreateParagraph({
     Title = "Changelog",
     Content = [[
+v2.2 (21.04.2026)
+- Added Webhook System (embed/table design)
+- Configurable webhook URL
+- Dropdown for fields to display
+- Dropdown for items to track
+- Webhook settings save to config
+- Fixed UI toggle visual sync
+
 v2.1 (17.04.2026)
 - Added Potato Graphics Mode
-- Added Game Speed control (0.1-10)
-- Added Tower Boosts with Dropdown
-- Added Reset All Tower Boosts button
-- Fixed Region display (player region)
-- Fixed Auto RNG teleport (now teleports into item center, no falling)
-- Fixed Auto RNG return (instant teleport back after pickup)
-- Fixed Dropdown callback (table to string conversion)
-- Fixed Tower Boosts path
-- Auto-creates missing Special folders and boosts
-- Supports 'inf' value for unlimited boosts
+- Added Game Speed control
+- Added Tower Boosts
+- Fixed Auto RNG
 
 v2.0
 - Added Info section
 - Added Show All Towers
 - Added Anti Macro
-- Added Teleports
 
 v1.0
 - First release
     ]]
 })
 
-local ConfigTab = Window:CreateTab("Config", 15567843390)
+local HttpService = game:GetService("HttpService")
 
-ConfigTab:CreateSection("⚙️ Configuration")
+local CONFIG_FOLDER = "SkibidiConfigs"
+local LAST_CONFIG_FILE = CONFIG_FOLDER.."/last.txt"
 
-ConfigTab:CreateParagraph({
-    Title = "🚧 COMING SOON...",
-    Content = "This section is under development.\n\nFuture features:\n• Configuration saving/loading\n• Preset management\n• Auto-save settings\n• And more!"
+if not isfolder(CONFIG_FOLDER) then
+    makefolder(CONFIG_FOLDER)
+end
+
+Settings.AutoSaveEnabled = false
+Settings.AutoLoadEnabled = true
+
+local function loadDefault()
+    Settings.ShowAllTowers = false
+    Settings.AutoRng = false
+    Settings.AntiMacro = false
+    Settings.AntiAFK = false
+    Settings.SelectedRngItems = {}
+    Settings.NotificationsEnabled = true
+    Settings.PotatoGraphics = false
+    Settings.WebhookEnabled = false
+    Settings.WebhookURL = ""
+    Settings.WebhookDisplayFields = {"Item"}
+    Settings.WebhookSelectedItems = {"JackpotPotion"}
+
+    savedPosition = nil
+    savedCoordsText = "(None)"
+    teleportButton:Set("Teleport to Position (None)")
+end
+
+local function saveConfig(name)
+    if not name or name == "" or name == "default" then return end
+
+    local hrp = getHRP()
+
+    local data = {
+        ShowAllTowers = Settings.ShowAllTowers,
+        AutoRng = Settings.AutoRng,
+        AntiMacro = Settings.AntiMacro,
+        AntiAFK = Settings.AntiAFK,
+        SelectedRngItems = Settings.SelectedRngItems,
+        NotificationsEnabled = Settings.NotificationsEnabled,
+        PotatoGraphics = Settings.PotatoGraphics,
+        WebhookEnabled = Settings.WebhookEnabled,
+        WebhookURL = Settings.WebhookURL,
+        WebhookDisplayFields = Settings.WebhookDisplayFields,
+        WebhookSelectedItems = Settings.WebhookSelectedItems,
+        SavedPosition = hrp and {
+            X = hrp.Position.X,
+            Y = hrp.Position.Y,
+            Z = hrp.Position.Z
+        } or nil
+    }
+
+    writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
+end
+
+local function loadConfig(name)
+    if name == "default" then
+        loadDefault()
+        return
+    end
+
+    local path = CONFIG_FOLDER.."/"..name..".json"
+    if not isfile(path) then return end
+
+    local data = HttpService:JSONDecode(readfile(path))
+
+    Settings.ShowAllTowers = data.ShowAllTowers
+    Settings.AutoRng = data.AutoRng
+    Settings.AntiMacro = data.AntiMacro
+    Settings.AntiAFK = data.AntiAFK
+    Settings.SelectedRngItems = data.SelectedRngItems or {}
+    Settings.NotificationsEnabled = data.NotificationsEnabled
+    Settings.PotatoGraphics = data.PotatoGraphics
+    Settings.WebhookEnabled = data.WebhookEnabled or false
+    Settings.WebhookURL = data.WebhookURL or ""
+    Settings.WebhookDisplayFields = data.WebhookDisplayFields or {"Item"}
+    Settings.WebhookSelectedItems = data.WebhookSelectedItems or {"JackpotPotion"}
+
+    Toggle_ShowAllTowers:Set(Settings.ShowAllTowers)
+    Toggle_AutoRng:Set(Settings.AutoRng)
+    Toggle_AntiMacro:Set(Settings.AntiMacro)
+    Toggle_NotificationsEnabled:Set(Settings.NotificationsEnabled)
+    Toggle_PotatoGraphics:Set(Settings.PotatoGraphics)
+    Toggle_WebhookEnabled:Set(Settings.WebhookEnabled)
+
+    stopShowAllTowers()
+    if Settings.ShowAllTowers then startShowAllTowers() end
+
+    stopAntiMacro()
+    if Settings.AntiMacro then startAntiMacro() end
+
+    if autoRngLoop then
+        task.cancel(autoRngLoop)
+        autoRngLoop = nil
+    end
+    isCollecting = false
+    if Settings.AutoRng then startAutoRngLoop() end
+
+    if Settings.AntiAFK then startAntiAFK() end
+
+    if Settings.PotatoGraphics then enablePotatoGraphics() else disablePotatoGraphics() end
+
+    selectedItems = {}
+    for _,v in ipairs(Settings.SelectedRngItems) do
+        table.insert(selectedItems,v)
+    end
+    updateSelectedText()
+
+    webhookSelectedItems = {}
+    for _,v in ipairs(Settings.WebhookSelectedItems) do
+        table.insert(webhookSelectedItems,v)
+    end
+    updateWebhookSelectedText()
+
+    webhookDisplayFields = {}
+    for _,v in ipairs(Settings.WebhookDisplayFields) do
+        table.insert(webhookDisplayFields,v)
+    end
+    updateDisplayFieldsText()
+
+    if data.SavedPosition then
+        savedPosition = CFrame.new(data.SavedPosition.X,data.SavedPosition.Y,data.SavedPosition.Z)
+        local x,y,z = math.floor(data.SavedPosition.X),math.floor(data.SavedPosition.Y),math.floor(data.SavedPosition.Z)
+        teleportButton:Set("Teleport to Position ("..x..","..y..","..z..")")
+    else
+        savedPosition = nil
+        teleportButton:Set("Teleport to Position (None)")
+    end
+end
+
+local function AutoSave()
+    if not Settings.AutoSaveEnabled then return end
+    if currentConfig ~= "default" then
+        saveConfig(currentConfig)
+        writefile(LAST_CONFIG_FILE,currentConfig)
+    end
+end
+
+local function AutoLoad()
+    if not Settings.AutoLoadEnabled then return end
+
+    if isfile(LAST_CONFIG_FILE) then
+        local last = readfile(LAST_CONFIG_FILE)
+        if last and last ~= "" then
+            currentConfig = last
+            loadConfig(last)
+            return
+        end
+    end
+
+    currentConfig = "default"
+    loadConfig("default")
+end
+
+local ConfigTab = Window:CreateTab("Config", 11956055886)
+
+local selectedLabel = ConfigTab:CreateParagraph({
+    Title="Selected Config",
+    Content="default"
 })
 
-ConfigTab:CreateButton({
-    Name = "Reload Script Info",
-    Callback = function()
-        Rayfield:Notify({
-            Title = "Config",
-            Content = "Config section coming soon!",
-            Duration = 2,
-            Image = 10885652171
-        })
+local function updateSelected()
+    selectedLabel:Set({
+        Title="Selected Config",
+        Content=currentConfig
+    })
+end
+
+local configDropdown = ConfigTab:CreateDropdown({
+    Name="Configs",
+    Options={"default"},
+    CurrentOption={"default"},
+    Callback=function(opt)
+        currentConfig = type(opt)=="table" and opt[1] or opt
+        updateSelected()
     end
 })
 
-if Settings.ShowAllTowers then
-    task.wait(2)
-    startShowAllTowers()
+local function refreshDropdown()
+    local map = {["default"]=true}
+
+    local ok,files = pcall(function()
+        return listfiles(CONFIG_FOLDER)
+    end)
+
+    if ok and files then
+        for _,file in ipairs(files) do
+            local name = tostring(file):match("([^\\/]+)%.json$")
+            if name then
+                map[name] = true
+            end
+        end
+    end
+
+    local list = {}
+    for name,_ in pairs(map) do
+        table.insert(list,name)
+    end
+
+    table.sort(list,function(a,b)
+        if a=="default" then return true end
+        if b=="default" then return false end
+        return a<b
+    end)
+
+    configDropdown:Refresh(list)
+
+    if currentConfig then
+        configDropdown:Set(currentConfig)
+    end
 end
 
-if Settings.PotatoGraphics then
-    togglePotatoGraphics(true)
-end
+refreshDropdown()
 
-if Settings.GameSpeed ~= 1 then
-    setGameSpeed(Settings.GameSpeed)
-end
+local inputName = ""
 
-Rayfield:Notify({
-    Title = "Loaded",
-    Content = "Skibidi Defense Script v2.1",
-    Duration = 3,
-    Image = 10885652171
+ConfigTab:CreateInput({
+    Name="Config Name",
+    PlaceholderText="Enter name...",
+    Callback=function(text)
+        inputName = text
+    end
 })
+
+ConfigTab:CreateButton({
+    Name="Create",
+    Callback=function()
+        if inputName=="" or inputName=="default" then return end
+
+        currentConfig = inputName
+
+        if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then
+            saveConfig(inputName)
+        end
+
+        refreshDropdown()
+        updateSelected()
+    end
+})
+
+ConfigTab:CreateButton({
+    Name="Save",
+    Callback=function()
+        if not currentConfig then return end
+        saveConfig(currentConfig)
+        AutoSave()
+        refreshDropdown()
+    end
+})
+
+ConfigTab:CreateButton({
+    Name="Load",
+    Callback=function()
+        if not currentConfig then return end
+        loadConfig(currentConfig)
+    end
+})
+
+ConfigTab:CreateButton({
+    Name="Delete",
+    Callback=function()
+        if currentConfig=="default" then return end
+
+        local path = CONFIG_FOLDER.."/"..currentConfig..".json"
+        if isfile(path) then
+            delfile(path)
+        end
+
+        currentConfig="default"
+        loadDefault()
+        refreshDropdown()
+        updateSelected()
+    end
+})
+
+ConfigTab:CreateToggle({
+    Name="Auto Load",
+    CurrentValue=Settings.AutoLoadEnabled,
+    Callback=function(v)
+        Settings.AutoLoadEnabled=v
+    end
+})
+
+ConfigTab:CreateToggle({
+    Name="Auto Save",
+    CurrentValue=Settings.AutoSaveEnabled,
+    Callback=function(v)
+        Settings.AutoSaveEnabled=v
+    end
+})
+
+task.spawn(function()
+    task.wait(1)
+    AutoLoad()
+    updateSelected()
+    webhookSelectedItems = {}
+    for _,v in ipairs(Settings.WebhookSelectedItems) do
+        table.insert(webhookSelectedItems,v)
+    end
+    updateWebhookSelectedText()
+    webhookDisplayFields = {}
+    for _,v in ipairs(Settings.WebhookDisplayFields) do
+        table.insert(webhookDisplayFields,v)
+    end
+    updateDisplayFieldsText()
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(20)
+        AutoSave()
+    end
+end)
