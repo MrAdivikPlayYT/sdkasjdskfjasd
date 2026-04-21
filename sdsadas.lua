@@ -1149,6 +1149,10 @@ local OtherTab = Window:CreateTab("Other", 102763551061763)
 
 OtherTab:CreateSection("Utilities")
 
+local infCamEnabled = false
+local oldMinZoom = nil
+local oldMaxZoom = nil
+
 local antiAFKEnabled = Settings.AntiAFK
 
 local function startAntiAFK()
@@ -1181,6 +1185,140 @@ end
 OtherTab:CreateButton({Name = "Dex Explorer", Callback = function() if not dexLoaded then loadDex() end end})
 OtherTab:CreateButton({Name = "Rejoin", Callback = function() game:GetService("TeleportService"):Teleport(game.PlaceId, game.Players.LocalPlayer) end})
 OtherTab:CreateButton({Name = "Infinite Yield", Callback = function() loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))() end})
+
+-- Server Hop UI (новая кнопка)
+-- Server Hop UI переменные
+local serverHopActive = false
+local serverHopConnection = nil
+
+local function destroyServerHopUI()
+    pcall(function()
+        -- Удаляем все возможные GUI элементы
+        local playerGui = game.Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            for _, gui in ipairs(playerGui:GetChildren()) do
+                if gui:IsA("ScreenGui") then
+                    local nameLower = string.lower(gui.Name)
+                    -- Проверяем разные возможные имена
+                    if nameLower:find("server") or 
+                       nameLower:find("hop") or 
+                       nameLower:find("teleport") or
+                       nameLower:find("hub") or
+                       nameLower == "main" or
+                       gui:FindFirstChild("ServerList") or
+                       gui:FindFirstChild("ServerHop") then
+                        gui:Destroy()
+                    end
+                end
+            end
+        end
+        
+        -- Удаляем через CoreGui (если есть)
+        local coreGui = game:GetService("CoreGui")
+        if coreGui then
+            for _, gui in ipairs(coreGui:GetChildren()) do
+                if gui:IsA("ScreenGui") then
+                    local nameLower = string.lower(gui.Name)
+                    if nameLower:find("server") or nameLower:find("hop") then
+                        gui:Destroy()
+                    end
+                end
+            end
+        end
+        
+        -- Очищаем глобальные переменные
+        if _G.ServerHop then _G.ServerHop = nil end
+        if getgenv().ServerHop then getgenv().ServerHop = nil end
+        if _G.ServerHopUI then _G.ServerHopUI = nil end
+        if getgenv().ServerHopUI then getgenv().ServerHopUI = nil end
+        
+        -- Пытаемся отключить любые активные connection'ы
+        if serverHopConnection then
+            serverHopConnection:Disconnect()
+            serverHopConnection = nil
+        end
+    end)
+end
+
+local function loadServerHopUI()
+    if serverHopActive then
+        -- Закрываем
+        destroyServerHopUI()
+        serverHopActive = false
+        if Settings.NotificationsEnabled then
+            Rayfield:Notify({Title = "Server Hop UI", Content = "Closed", Duration = 2, Image = 10885652171})
+        end
+        return
+    end
+    
+    -- Открываем заново
+    destroyServerHopUI() -- Сначала чистим старые остатки
+    serverHopActive = true
+    
+    task.spawn(function()
+        local success, err = pcall(function()
+            local hopScript = game:HttpGet('https://raw.githubusercontent.com/MrAdivikPlayYT/sdkasjdskfjasd/refs/heads/main/Hop.lua')
+            local func = loadstring(hopScript)
+            if func then
+                func()
+            else
+                error("Failed to loadstring")
+            end
+        end)
+        
+        if not success then
+            serverHopActive = false
+            if Settings.NotificationsEnabled then
+                Rayfield:Notify({Title = "Server Hop UI", Content = "Failed to load: " .. tostring(err), Duration = 3, Image = 10885652171})
+            end
+        else
+            if Settings.NotificationsEnabled then
+                Rayfield:Notify({Title = "Server Hop UI", Content = "Loaded! Press again to close", Duration = 2, Image = 10885652171})
+            end
+        end
+    end)
+end
+
+OtherTab:CreateButton({Name = "Server Hop UI", Callback = function() loadServerHopUI() end})
+
+local function toggleInfCamera(v)
+    local player = game.Players.LocalPlayer
+    
+    if v then
+        -- сохраняем старые значения
+        oldMinZoom = player.CameraMinZoomDistance
+        oldMaxZoom = player.CameraMaxZoomDistance
+        
+        -- ставим "бесконечный" зум
+        player.CameraMinZoomDistance = 0.5
+        player.CameraMaxZoomDistance = 100000
+        
+    else
+        -- возвращаем обратно
+        if oldMinZoom and oldMaxZoom then
+            player.CameraMinZoomDistance = oldMinZoom
+            player.CameraMaxZoomDistance = oldMaxZoom
+        end
+    end
+end
+
+OtherTab:CreateToggle({
+    Name = "Inf Camera Distance",
+    CurrentValue = false,
+    Callback = function(v)
+        infCamEnabled = v
+        toggleInfCamera(v)
+        
+        if Settings.NotificationsEnabled then
+            Rayfield:Notify({
+                Title = "Camera Distance",
+                Content = v and "Infinite Enabled" or "Restored",
+                Duration = 2,
+                Image = 10885652171
+            })
+        end
+    end
+})
 
 OtherTab:CreateSection("Settings")
 
