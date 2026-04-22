@@ -24,6 +24,8 @@ if not allowed then
 end
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
 
 local Settings = {
     ShowAllTowers = false,
@@ -32,6 +34,8 @@ local Settings = {
     AntiAFK = false,
     SelectedRngItems = {},
     NotificationsEnabled = true,
+    BlurEnabled = false,
+    InstantProxMount = false,
     PotatoGraphics = false,
     GameSpeed = 1,
     SelectedBoostType = "DMG",
@@ -40,6 +44,86 @@ local Settings = {
     WebhookDisplayFields = {"Item"},
     WebhookSelectedItems = {"JackpotPotion"}
 }
+
+local menuBlur = Lighting:FindFirstChild("MenuBlur")
+if not menuBlur then
+    menuBlur = Instance.new("BlurEffect")
+    menuBlur.Name = "MenuBlur"
+    menuBlur.Parent = Lighting
+end
+menuBlur.Size = 0
+menuBlur.Enabled = false
+
+local blurTween = nil
+local blurTweenId = 0
+local blurWatcherStarted = false
+
+local function isRayfieldVisible()
+    local ok, visible = pcall(function()
+        return Rayfield:IsVisible()
+    end)
+
+    return ok and visible == true
+end
+
+local function tweenMenuBlur(size, time)
+    blurTweenId = blurTweenId + 1
+    local thisTweenId = blurTweenId
+
+    if blurTween then
+        blurTween:Cancel()
+    end
+
+    if size > 0 then
+        menuBlur.Enabled = true
+    end
+
+    blurTween = TweenService:Create(
+        menuBlur,
+        TweenInfo.new(time or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { Size = size }
+    )
+
+    blurTween.Completed:Connect(function(playbackState)
+        if thisTweenId == blurTweenId and size <= 0 and playbackState == Enum.PlaybackState.Completed then
+            menuBlur.Enabled = false
+        end
+    end)
+
+    blurTween:Play()
+end
+
+local function updateMenuBlur()
+    if not Settings.BlurEnabled then
+        tweenMenuBlur(0, 0.2)
+        return
+    end
+
+    if isRayfieldVisible() then
+        tweenMenuBlur(32, 0.25)
+    else
+        tweenMenuBlur(0, 0.25)
+    end
+end
+
+local function startMenuBlurWatcher()
+    if blurWatcherStarted then return end
+    blurWatcherStarted = true
+
+    task.spawn(function()
+        local lastState = isRayfieldVisible()
+
+        while true do
+            task.wait(0.1)
+
+            local visible = isRayfieldVisible()
+            if visible ~= lastState then
+                lastState = visible
+                updateMenuBlur()
+            end
+        end
+    end)
+end
 
 local showAllTowersConnection = nil
 local originalVisibility = {}
@@ -534,9 +618,10 @@ local function enablePotatoGraphics()
         
         for _, v in ipairs(Lighting:GetChildren()) do
             pcall(function()
-                if v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or 
+                if v.Name ~= "MenuBlur" and (
+                   v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or 
                    v:IsA("ColorCorrectionEffect") or v:IsA("DepthOfFieldEffect") or
-                   v:IsA("Atmosphere") then
+                   v:IsA("Atmosphere")) then
                     v.Enabled = false
                 end
             end)
@@ -693,6 +778,9 @@ local Window = Rayfield:CreateWindow({
     ConfigurationSaving={Enabled=false},
     KeySystem=false
 })
+
+updateMenuBlur()
+startMenuBlurWatcher()
 
 local MainTab = Window:CreateTab("Main", 120674109076896)
 
@@ -1149,6 +1237,57 @@ local OtherTab = Window:CreateTab("Other", 102763551061763)
 
 OtherTab:CreateSection("Utilities")
 
+local originalHoldDurations = {}
+
+local function saveOriginalHoldDuration(prompt)
+    if originalHoldDurations[prompt] == nil then
+        originalHoldDurations[prompt] = prompt.HoldDuration
+    end
+end
+
+local function setInstantProxMount(prompt)
+    saveOriginalHoldDuration(prompt)
+    pcall(function()
+        prompt.HoldDuration = 0
+    end)
+end
+
+local function restoreOriginalHoldDuration(prompt)
+    if originalHoldDurations[prompt] ~= nil then
+        pcall(function()
+            prompt.HoldDuration = originalHoldDurations[prompt]
+        end)
+    end
+end
+
+local function applyInstantProxMount(action)
+    for _, prompt in ipairs(workspace:GetDescendants()) do
+        if prompt:IsA("ProximityPrompt") then
+            if action == "set" then
+                setInstantProxMount(prompt)
+            elseif action == "restore" then
+                restoreOriginalHoldDuration(prompt)
+            end
+        end
+    end
+end
+
+workspace.DescendantAdded:Connect(function(descendant)
+    task.wait(0.1)
+    if descendant:IsA("ProximityPrompt") and Settings.InstantProxMount then
+        setInstantProxMount(descendant)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Settings.InstantProxMount then
+            applyInstantProxMount("set")
+        end
+    end
+end)
+
 local infCamEnabled = false
 local oldMinZoom = nil
 local oldMaxZoom = nil
@@ -1169,6 +1308,33 @@ OtherTab:CreateButton({
     Name = antiAFKEnabled and "Anti AFK [ON]" or "Anti AFK",
     Callback = function()
         if not antiAFKEnabled then startAntiAFK() end
+    end
+})
+
+local Toggle_InstantProxMount = OtherTab:CreateToggle({
+    Name = "Instant ProxMount",
+    CurrentValue = Settings.InstantProxMount,
+    Callback = function(v)
+        Settings.InstantProxMount = v
+        if v then
+            applyInstantProxMount("set")
+            if Settings.NotificationsEnabled then
+                Rayfield:Notify({
+                    Title = "Instant ProxMount",
+                    Content = "HoldDuration = 0",
+                    Duration = 2
+                })
+            end
+        else
+            applyInstantProxMount("restore")
+            if Settings.NotificationsEnabled then
+                Rayfield:Notify({
+                    Title = "Instant ProxMount",
+                    Content = "Restored",
+                    Duration = 2
+                })
+            end
+        end
     end
 })
 
@@ -1321,6 +1487,15 @@ OtherTab:CreateToggle({
 })
 
 OtherTab:CreateSection("Settings")
+
+local Toggle_BlurEnabled = OtherTab:CreateToggle({
+    Name = "Blur",
+    CurrentValue = Settings.BlurEnabled,
+    Callback = function(v)
+        Settings.BlurEnabled = v
+        updateMenuBlur()
+    end
+})
 
 local Toggle_NotificationsEnabled = OtherTab:CreateToggle({
     Name = "Show Notifications",
@@ -1593,11 +1768,17 @@ local function loadDefault()
     Settings.AntiAFK = false
     Settings.SelectedRngItems = {}
     Settings.NotificationsEnabled = true
+    Settings.BlurEnabled = false
+    Settings.InstantProxMount = false
     Settings.PotatoGraphics = false
     Settings.WebhookEnabled = false
     Settings.WebhookURL = ""
     Settings.WebhookDisplayFields = {"Item"}
     Settings.WebhookSelectedItems = {"JackpotPotion"}
+    Toggle_BlurEnabled:Set(Settings.BlurEnabled)
+    Toggle_InstantProxMount:Set(Settings.InstantProxMount)
+    updateMenuBlur()
+    applyInstantProxMount("restore")
 
     savedPosition = nil
     savedCoordsText = "(None)"
@@ -1616,6 +1797,8 @@ local function saveConfig(name)
         AntiAFK = Settings.AntiAFK,
         SelectedRngItems = Settings.SelectedRngItems,
         NotificationsEnabled = Settings.NotificationsEnabled,
+        BlurEnabled = Settings.BlurEnabled,
+        InstantProxMount = Settings.InstantProxMount,
         PotatoGraphics = Settings.PotatoGraphics,
         WebhookEnabled = Settings.WebhookEnabled,
         WebhookURL = Settings.WebhookURL,
@@ -1648,6 +1831,8 @@ local function loadConfig(name)
     Settings.AntiAFK = data.AntiAFK
     Settings.SelectedRngItems = data.SelectedRngItems or {}
     Settings.NotificationsEnabled = data.NotificationsEnabled
+    Settings.BlurEnabled = data.BlurEnabled or false
+    Settings.InstantProxMount = data.InstantProxMount or false
     Settings.PotatoGraphics = data.PotatoGraphics
     Settings.WebhookEnabled = data.WebhookEnabled or false
     Settings.WebhookURL = data.WebhookURL or ""
@@ -1658,8 +1843,16 @@ local function loadConfig(name)
     Toggle_AutoRng:Set(Settings.AutoRng)
     Toggle_AntiMacro:Set(Settings.AntiMacro)
     Toggle_NotificationsEnabled:Set(Settings.NotificationsEnabled)
+    Toggle_BlurEnabled:Set(Settings.BlurEnabled)
+    Toggle_InstantProxMount:Set(Settings.InstantProxMount)
     Toggle_PotatoGraphics:Set(Settings.PotatoGraphics)
     Toggle_WebhookEnabled:Set(Settings.WebhookEnabled)
+    updateMenuBlur()
+    if Settings.InstantProxMount then
+        applyInstantProxMount("set")
+    else
+        applyInstantProxMount("restore")
+    end
 
     stopShowAllTowers()
     if Settings.ShowAllTowers then startShowAllTowers() end
