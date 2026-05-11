@@ -26,13 +26,12 @@ end
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 local Settings = {
     ShowAllTowers = false,
     AntiMacro = false,
-    AutoRng = false,
     AntiAFK = false,
-    SelectedRngItems = {},
     NotificationsEnabled = true,
     BlurEnabled = false,
     InstantProxMount = false,
@@ -41,10 +40,17 @@ local Settings = {
     SelectedBoostType = "DMG",
     WebhookEnabled = false,
     WebhookURL = "",
-    WebhookDisplayFields = {"Item"},
-    WebhookSelectedItems = {"JackpotPotion"},
-    ShowRNGInPlaza = false
+    WebhookMatchTracking = false,
+    ShowLogInWebhook = true,
+    WebhookMatchFields = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
 }
+
+local winStreak = 0
+local totalCredits = 0
+local matchTrackingActive = false
+local endedConnection = nil
+local endedBoolValue = nil
+local currentConfig = "default"
 
 local menuBlur = Lighting:FindFirstChild("MenuBlur")
 if not menuBlur then
@@ -116,54 +122,168 @@ local originalBoosts = {}
 local createdSpecial = {}
 local createdBoostsList = {}
 
-local webhookCooldown = false
+local function getValueAfterColon(text)
+    if not text or text == "" then return "N/A" end
+    local colonPos = text:find(":")
+    if colonPos then
+        local value = text:sub(colonPos + 1)
+        value = value:gsub("^%s*(.-)%s*$", "%1")
+        return value
+    end
+    return text
+end
 
-local function sendWebhook(itemName)
-    if not Settings.WebhookEnabled or Settings.WebhookURL == "" then return end
-    if webhookCooldown then return end
-    webhookCooldown = true
-    task.spawn(function()
-        task.wait(2)
-        webhookCooldown = false
-    end)
+local function toNumber(value)
+    if not value or value == "N/A" then return 0 end
+    local num = tonumber(value:gsub("[^%d]", ""))
+    return num or 0
+end
+
+local function formatNumber(num)
+    if num >= 1000000 then
+        return string.format("%.1fM", num / 1000000)
+    elseif num >= 1000 then
+        return string.format("%.1fK", num / 1000)
+    end
+    return tostring(num)
+end
+
+local function getGameResult()
+    local player = game.Players.LocalPlayer
+    if not player then return "Unknown" end
     
-    local Players = game:GetService("Players")
-    local player = Players.LocalPlayer
-    local gameId = game.PlaceId
-    local gameName = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(gameId).Name end) and game:GetService("MarketplaceService"):GetProductInfo(gameId).Name or "Unknown"
-    local playerCount = #Players:GetPlayers()
-    local maxPlayers = Players.MaxPlayers
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return "Unknown" end
+    
+    local gameEnded = playerGui:FindFirstChild("GameEnded")
+    if not gameEnded then return "Unknown" end
+    
+    local frame = gameEnded:FindFirstChild("Frame")
+    if not frame then return "Unknown" end
+    
+    local tping = frame:FindFirstChild("tping")
+    if not tping then return "Unknown" end
+    
+    local resultText = tping.Text
+    local lowerText = resultText:lower()
+    
+    if lowerText:find("win") or lowerText:find("victory") or lowerText:find("побед") or
+       lowerText:find("defeated") then
+        return "WIN"
+    end
+    
+    if lowerText:find("lose") or lowerText:find("defeat") or lowerText:find("destroyed") or
+       lowerText:find("пораж") or lowerText:find("уничтож") then
+        return "LOSE"
+    end
+    
+    return "Unknown"
+end
+
+local function collectMatchStats()
+    local stats = {
+        kills = "N/A",
+        survived = "N/A",
+        timeelapsed = "N/A",
+        items = "N/A",
+        clock = "N/A",
+        credits = "N/A",
+        crystals = "N/A",
+        spent = "N/A"
+    }
+    
+    local player = game.Players.LocalPlayer
+    if not player then return stats end
+    
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return stats end
+    
+    local gameEnded = playerGui:FindFirstChild("GameEnded")
+    if not gameEnded then return stats end
+    
+    local frame = gameEnded:FindFirstChild("Frame")
+    if not frame then return stats end
+    
+    local main = frame:FindFirstChild("main")
+    if not main then return stats end
+    
+    local killsLabel = main:FindFirstChild("kills")
+    if killsLabel then
+        stats.kills = getValueAfterColon(killsLabel.Text)
+    end
+    
+    local survivedLabel = main:FindFirstChild("survived")
+    if survivedLabel then
+        stats.survived = getValueAfterColon(survivedLabel.Text)
+    end
+    
+    local timeLabel = main:FindFirstChild("timeelapsed")
+    if timeLabel then
+        stats.timeelapsed = getValueAfterColon(timeLabel.Text)
+    end
+    
+    local itemsLabel = main:FindFirstChild("itemsearned")
+    if itemsLabel then
+        stats.items = getValueAfterColon(itemsLabel.Text)
+    end
+    
+    local clockLabel = main:FindFirstChild("clockearned")
+    if clockLabel then
+        stats.clock = getValueAfterColon(clockLabel.Text)
+    end
+    
+    local creditsLabel = main:FindFirstChild("creditsearned")
+    if creditsLabel then
+        stats.credits = getValueAfterColon(creditsLabel.Text)
+    end
+    
+    local crystalsLabel = main:FindFirstChild("crystalsearned")
+    if crystalsLabel then
+        stats.crystals = getValueAfterColon(crystalsLabel.Text)
+    end
+    
+    local spentLabel = main:FindFirstChild("spent")
+    if spentLabel then
+        stats.spent = getValueAfterColon(spentLabel.Text)
+    end
+    
+    return stats
+end
+
+local function sendMatchWebhook(fieldsData)
+    if not Settings.WebhookEnabled or Settings.WebhookURL == "" then return end
+    if not Settings.WebhookMatchTracking then return end
+    
     local timeNow = os.date("%H:%M:%S")
     
-    local function code(v) return "```"..tostring(v).."```" end
-    local bigItem = "```🔥 "..string.upper(itemName).." 🔥```"
-    local fields = {}
+    local function darkCode(v) return "```fix\n"..tostring(v).."\n```" end
     
-    for _, field in ipairs(Settings.WebhookDisplayFields) do
-        if field == "Item" then
-            table.insert(fields, { name = "🎁 Item", value = bigItem, inline = false })
-        elseif field == "Username" then
-            table.insert(fields, { name = "👤 Username", value = code(player.Name), inline = true })
-        elseif field == "GameName" then
-            table.insert(fields, { name = "🎮 Game Name", value = code(gameName), inline = true })
-        elseif field == "GameID" then
-            table.insert(fields, { name = "🆔 Game ID", value = code(gameId), inline = true })
-        elseif field == "Players" then
-            table.insert(fields, { name = "👥 Players", value = code(playerCount .. "/" .. maxPlayers), inline = true })
-        elseif field == "Time" then
-            table.insert(fields, { name = "🕒 Server Time", value = code(timeNow), inline = true })
-        end
+    local fields = {}
+    for _, field in ipairs(fieldsData) do
+        table.insert(fields, {
+            name = field.name,
+            value = darkCode(field.value),
+            inline = field.inline or false
+        })
     end
-    table.insert(fields, { name = "📡 Log", value = code(timeNow), inline = false })
+    
+    if Settings.ShowLogInWebhook then
+        table.insert(fields, {
+            name = "📡 Log",
+            value = darkCode(timeNow),
+            inline = false
+        })
+    end
     
     local data = {
-        username = "Skibidi Defense Script",
+        username = "Skibidi Defense Match Tracker",
         avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png",
         embeds = {{
             author = { name = "Skibidi Defense Script", icon_url = "https://cdn.discordapp.com/embed/avatars/0.png" },
             title = "🚀 Skibidi Defense (Private)",
             color = 65280,
-            fields = fields
+            fields = fields,
+            footer = { text = "Нажми на значение чтобы скопировать" }
         }}
     }
     
@@ -173,6 +293,111 @@ local function sendWebhook(itemName)
         pcall(function()
             request({ Url = Settings.WebhookURL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = json })
         end)
+    end
+end
+
+local function onGameEnded()
+    task.wait(1.5)
+    
+    local result = getGameResult()
+    local stats = collectMatchStats()
+    local currentCredits = toNumber(stats.credits)
+    
+    if result == "WIN" then
+        winStreak = winStreak + 1
+        totalCredits = totalCredits + currentCredits
+    elseif result == "LOSE" then
+        winStreak = 0
+        totalCredits = 0
+    end
+    
+    local fields = {}
+    for _, field in ipairs(Settings.WebhookMatchFields) do
+        if field == "Result" then
+            fields[#fields+1] = { name = "🎯 Результат", value = result, inline = false }
+        elseif field == "Streak" then
+            fields[#fields+1] = { name = "📊 Win Streak", value = tostring(winStreak), inline = true }
+        elseif field == "Kills" then
+            fields[#fields+1] = { name = "⚔️ Убийств", value = stats.kills, inline = true }
+        elseif field == "Survived" then
+            fields[#fields+1] = { name = "🛡️ Выжил", value = stats.survived, inline = true }
+        elseif field == "Time" then
+            fields[#fields+1] = { name = "⏱️ Время", value = stats.timeelapsed, inline = true }
+        elseif field == "Items" then
+            fields[#fields+1] = { name = "🎁 Предметов", value = stats.items, inline = true }
+        elseif field == "Credits" then
+            fields[#fields+1] = { name = "💰 Кредитов", value = stats.credits, inline = true }
+        elseif field == "Crystals" then
+            fields[#fields+1] = { name = "💎 Кристаллов", value = stats.crystals, inline = true }
+        elseif field == "Spent" then
+            fields[#fields+1] = { name = "💸 Потрачено", value = stats.spent, inline = false }
+        elseif field == "Player" then
+            fields[#fields+1] = { name = "👤 Игрок", value = game.Players.LocalPlayer.Name, inline = true }
+        elseif field == "TotalCredits" then
+            fields[#fields+1] = { name = "💰 Total Credits", value = formatNumber(totalCredits), inline = false }
+        end
+    end
+    
+    sendMatchWebhook(fields)
+end
+
+local function setupTracking()
+    if endedConnection then
+        endedConnection:Disconnect()
+        endedConnection = nil
+    end
+    
+    if not endedBoolValue then return end
+    
+    endedConnection = endedBoolValue:GetPropertyChangedSignal("Value"):Connect(function()
+        if not Settings.WebhookMatchTracking then return end
+        if endedBoolValue.Value == true then
+            onGameEnded()
+        end
+    end)
+    
+    if endedBoolValue.Value == true and Settings.WebhookMatchTracking then
+        onGameEnded()
+    end
+end
+
+local function findAndTrackEndedBool()
+    local replicatedStorage = game:GetService("ReplicatedStorage")
+    
+    for _, child in ipairs(replicatedStorage:GetChildren()) do
+        if child:IsA("BoolValue") and string.lower(child.Name) == "ended" then
+            endedBoolValue = child
+            break
+        end
+    end
+    
+    if endedBoolValue then
+        setupTracking()
+    else
+        local connection
+        connection = game.DescendantAdded:Connect(function(desc)
+            if desc:IsA("BoolValue") and string.lower(desc.Name) == "ended" then
+                endedBoolValue = desc
+                setupTracking()
+                connection:Disconnect()
+            end
+        end)
+    end
+end
+
+local function startMatchTracking()
+    if matchTrackingActive then return end
+    matchTrackingActive = true
+    winStreak = 0
+    totalCredits = 0
+    task.spawn(findAndTrackEndedBool)
+end
+
+local function stopMatchTracking()
+    matchTrackingActive = false
+    if endedConnection then
+        endedConnection:Disconnect()
+        endedConnection = nil
     end
 end
 
@@ -539,7 +764,7 @@ end
 local function startShowAllTowers()
     if showAllTowersConnection then return end
     showAllTowers()
-    showAllTowersConnection = game:GetService("RunService").Stepped:Connect(function()
+    showAllTowersConnection = RunService.Stepped:Connect(function()
         if Settings.ShowAllTowers then showAllTowers() end
     end)
 end
@@ -559,7 +784,6 @@ local MainTab = Window:CreateTab("Main", 120674109076896)
 MainTab:CreateSection("Info")
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local LocalizationService = game:GetService("LocalizationService")
 
@@ -631,128 +855,6 @@ MainTab:CreateButton({ Name = "Bypass Jeffry", Callback = function() for _, obj 
 
 local Toggle_ShowAllTowers = MainTab:CreateToggle({ Name = "Show All Towers", CurrentValue = Settings.ShowAllTowers, Callback = function(v) Settings.ShowAllTowers = v; if v then startShowAllTowers(); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Show All Towers", Content = "Enabled - All towers are visible", Duration = 2, Image = 10885652171 }) end else stopShowAllTowers(); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Show All Towers", Content = "Disabled - Towers restored", Duration = 2, Image = 10885652171 }) end end end })
 
-MainTab:CreateSection("Trading Plaza")
-
--- RNG GUI управление - только указанные кнопки
-local showRNGButtons = false
-local rngGui = nil
-local originalButtonSizes = {}
-
--- Разрешенные предметы (только эти кнопки будут видны)
-local allowedItems = {"JackpotPotion", "Luck2", "Time2", "Luck3", "Time3", "Remover"}
-
-local function setRNGButtonsHeight(height)
-    if not rngGui then return end
-    for _, child in ipairs(rngGui:GetDescendants()) do
-        if child:IsA("ImageButton") then
-            for _, item in ipairs(allowedItems) do
-                if child.Name == item then
-                    pcall(function()
-                        if originalButtonSizes[child] == nil then
-                            originalButtonSizes[child] = child.Size
-                        end
-                        child.Size = UDim2.new(0, child.Size.X.Offset, 0, height)
-                    end)
-                    break
-                end
-            end
-        end
-    end
-end
-
-local function setRNGButtonsVisible(visible)
-    if not rngGui then return end
-    -- Включаем/выключаем сам GUI
-    rngGui.Enabled = visible
-    -- Для каждой кнопки из списка
-    for _, child in ipairs(rngGui:GetDescendants()) do
-        if child:IsA("ImageButton") then
-            local isAllowed = false
-            for _, item in ipairs(allowedItems) do
-                if child.Name == item then
-                    isAllowed = true
-                    break
-                end
-            end
-            if isAllowed then
-                pcall(function()
-                    child.Visible = visible
-                end)
-            end
-        end
-    end
-end
-
-local function resetRNGButtonsSize()
-    for btn, size in pairs(originalButtonSizes) do
-        pcall(function()
-            if btn and btn.Parent then
-                btn.Size = size
-            end
-        end)
-    end
-    originalButtonSizes = {}
-end
-
-local function findRNGGui()
-    local player = game.Players.LocalPlayer
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if playerGui then
-        rngGui = playerGui:FindFirstChild("RNG")
-    end
-end
-
-local Toggle_ShowRNGInPlaza = MainTab:CreateToggle({
-    Name = "Show RNG In Plaza",
-    CurrentValue = Settings.ShowRNGInPlaza,
-    Callback = function(v)
-        Settings.ShowRNGInPlaza = v
-        showRNGButtons = v
-        findRNGGui()
-        
-        if v then
-            if rngGui then
-                setRNGButtonsVisible(true)
-                setRNGButtonsHeight(85)
-            end
-        else
-            if rngGui then
-                setRNGButtonsVisible(false)
-                resetRNGButtonsSize()
-            end
-        end
-        
-        if Settings.NotificationsEnabled then
-            Rayfield:Notify({
-                Title = "RNG Buttons",
-                Content = v and "Visible (Height 85)" or "Hidden",
-                Duration = 2,
-                Image = 10885652171
-            })
-        end
-    end
-})
-
--- Наблюдаем за появлением RNG GUI
-local function onGuiAdded(gui)
-    if gui.Name == "RNG" and gui:IsA("ScreenGui") then
-        rngGui = gui
-        if showRNGButtons then
-            task.wait(0.5)
-            setRNGButtonsVisible(true)
-            setRNGButtonsHeight(85)
-        end
-    end
-end
-
-local playerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui")
-playerGui.DescendantAdded:Connect(onGuiAdded)
-findRNGGui()
-if rngGui and showRNGButtons then
-    setRNGButtonsVisible(true)
-    setRNGButtonsHeight(85)
-end
-
 MainTab:CreateSection("Game")
 
 local function getHRP()
@@ -760,23 +862,81 @@ local function getHRP()
     return c and c:FindFirstChild("HumanoidRootPart")
 end
 
+-- Bypass Macros (Patched)
 local camConn = nil
-local oldCF = nil
+local lockedCF = nil
+local function getShakeOffset()
+    local offsets = {0.01, 0.02, 0.04, 0.05}
+    local x = offsets[math.random(1,#offsets)]
+    local y = offsets[math.random(1,#offsets)]
+    x = x * (math.random(0,1) == 1 and 1 or -1)
+    y = y * (math.random(0,1) == 1 and 1 or -1)
+    return x, y
+end
 
-function startAntiMacro()
-    if camConn then return end
-    local cam = workspace.CurrentCamera
-    oldCF = cam.CFrame
-    camConn = game:GetService("RunService").RenderStepped:Connect(function()
-        if Settings.AntiMacro then cam.CFrame = oldCF end
+local function disableAntiMacroScripts()
+    local player = game.Players.LocalPlayer
+    pcall(function()
+        local char = player.Character or player.CharacterAdded:Wait()
+        local anti = char:FindFirstChild("antimacro")
+        if anti and anti:IsA("LocalScript") then
+            anti.Enabled = false
+        end
+    end)
+    pcall(function()
+        local starter = game:GetService("StarterPlayer")
+        local scs = starter:FindFirstChild("StarterCharacterScripts")
+        if scs then
+            local anti = scs:FindFirstChild("antimacro")
+            if anti and anti:IsA("LocalScript") then
+                anti.Enabled = false
+            end
+        end
     end)
 end
 
-function stopAntiMacro()
-    if camConn then camConn:Disconnect(); camConn = nil end
+local function startAntiMacro()
+    if camConn then return end
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    disableAntiMacroScripts()
+    lockedCF = cam.CFrame
+    cam.CameraType = Enum.CameraType.Scriptable
+    camConn = RunService.RenderStepped:Connect(function()
+        if not Settings.AntiMacro then return end
+        if not lockedCF then return end
+        local x, y = getShakeOffset()
+        cam.CFrame = lockedCF * CFrame.new(x, y, 0)
+    end)
 end
 
-local Toggle_AntiMacro = MainTab:CreateToggle({ Name = "Anti Macro (Bypass)", CurrentValue = Settings.AntiMacro, Callback = function(v) Settings.AntiMacro = v; if v then startAntiMacro() else stopAntiMacro() end; if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Anti Macro", Content = v and "Enabled" or "Disabled", Duration = 2, Image = 10885652171 }) end end })
+local function stopAntiMacro()
+    if camConn then
+        camConn:Disconnect()
+        camConn = nil
+    end
+    local cam = workspace.CurrentCamera
+    if cam then
+        cam.CameraType = Enum.CameraType.Custom
+    end
+    lockedCF = nil
+end
+
+local Toggle_AntiMacro = MainTab:CreateToggle({ Name = "Bypass Macros (Patched)", CurrentValue = Settings.AntiMacro, Callback = function(v)
+    Settings.AntiMacro = v
+    if v then
+        startAntiMacro()
+        Rayfield:Notify({ Title = "Bypass Macros", Content = "Camera Locked + Scripts Disabled", Duration = 3 })
+    else
+        stopAntiMacro()
+        Rayfield:Notify({ Title = "Bypass Macros", Content = "Disabled", Duration = 2 })
+    end
+end })
+
+MainTab:CreateParagraph({
+    Title = "Info",
+    Content = "Камера стоит на месте\nИгрок может двигаться\nКамера только трясется\nAntiMacro отключается навсегда"
+})
 
 local savedPosition = nil
 local savedCoordsText = "(None)"
@@ -784,81 +944,6 @@ local savedCoordsText = "(None)"
 local teleportButton = MainTab:CreateButton({ Name = "Teleport to Position (None)", Callback = function() local hrp = getHRP(); if hrp and savedPosition then hrp.CFrame = savedPosition; if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Teleported", Content = "To " .. savedCoordsText, Duration = 2, Image = 10885652171 }) end else Rayfield:Notify({ Title = "Error", Content = "No saved position", Duration = 2, Image = 10885652171 }) end end })
 
 MainTab:CreateButton({ Name = "Save Position", Callback = function() local hrp = getHRP(); if not hrp then return end; savedPosition = hrp.CFrame; local x, y, z = math.floor(hrp.Position.X), math.floor(hrp.Position.Y), math.floor(hrp.Position.Z); savedCoordsText = string.format("(%d, %d, %d)", x, y, z); teleportButton:Set("Teleport to Position " .. savedCoordsText); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Saved", Content = "Saved at " .. savedCoordsText, Duration = 2, Image = 10885652171 }) end end })
-
-MainTab:CreateSection("RNG")
-
-local selectedItems = {}
-local selectedText = MainTab:CreateParagraph({ Title = "Selected", Content = "None" })
-
-local function updateSelectedText()
-    local content = #selectedItems > 0 and table.concat(selectedItems, ", ") or "None"
-    selectedText:Set({ Title = "Selected", Content = content })
-    Settings.SelectedRngItems = selectedItems
-end
-
-MainTab:CreateDropdown({ Name = "Items", Options = {"JackpotPotion", "Luck2", "Time2", "Luck3", "Time3", "Remover"}, CurrentOption = {}, MultipleOptions = true, Callback = function(opt) selectedItems = {}; if typeof(opt) == "table" then for _, v in ipairs(opt) do table.insert(selectedItems, v) end else table.insert(selectedItems, opt) end; updateSelectedText() end })
-
-local autoRngLoop = nil
-local isCollecting = false
-
-local function getItemPart(itemName)
-    local item = workspace:FindFirstChild(itemName)
-    if not item then return nil end
-    if item:IsA("BasePart") then return item end
-    local primaryPart = item:FindFirstChild("PrimaryPart")
-    if primaryPart and primaryPart:IsA("BasePart") then return primaryPart end
-    local humanoidRootPart = item:FindFirstChild("HumanoidRootPart")
-    if humanoidRootPart and humanoidRootPart:IsA("BasePart") then return humanoidRootPart end
-    for _, child in ipairs(item:GetDescendants()) do
-        if child:IsA("BasePart") then return child end
-    end
-    return nil
-end
-
-local function startAutoRngLoop()
-    if autoRngLoop then return end
-    autoRngLoop = task.spawn(function()
-        while Settings.AutoRng do
-            if not isCollecting and #selectedItems > 0 then
-                local hrp = getHRP()
-                if hrp then
-                    isCollecting = true
-                    local startPosCF = hrp.CFrame
-                    for _, itemName in ipairs(selectedItems) do
-                        if not Settings.AutoRng then break end
-                        local itemPart = getItemPart(itemName)
-                        if itemPart and itemPart:IsA("BasePart") and itemPart.Parent then
-                            hrp.CFrame = itemPart.CFrame
-                            task.wait(0.05)
-                            local waitTime = 0
-                            local maxWait = 3
-                            while workspace:FindFirstChild(itemName) and waitTime < maxWait do
-                                task.wait(0.03)
-                                waitTime = waitTime + 0.03
-                            end
-                            if not workspace:FindFirstChild(itemName) then
-                                if Settings.NotificationsEnabled then
-                                    Rayfield:Notify({ Title = "Auto RNG", Content = "Collected: " .. itemName, Duration = 1, Image = 10885652171 })
-                                end
-                                for _, webhookItem in ipairs(Settings.WebhookSelectedItems) do
-                                    if itemName == webhookItem then sendWebhook(itemName); break end
-                                end
-                            end
-                            hrp.CFrame = startPosCF
-                            task.wait(0.1)
-                        end
-                    end
-                    isCollecting = false
-                end
-            end
-            task.wait(0.3)
-        end
-    end)
-end
-
-local Toggle_AutoRng = MainTab:CreateToggle({ Name = "Auto RNG", CurrentValue = Settings.AutoRng, Callback = function(v) Settings.AutoRng = v; if v then startAutoRngLoop() end; if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Auto RNG", Content = v and "Enabled" or "Disabled", Duration = 2, Image = 10885652171 }) end end })
-
-if Settings.AutoRng then startAutoRngLoop() end
 
 MainTab:CreateSection("Teleports")
 
@@ -981,7 +1066,7 @@ local Toggle_BlurEnabled = OtherTab:CreateToggle({ Name = "Blur", CurrentValue =
 local Toggle_NotificationsEnabled = OtherTab:CreateToggle({ Name = "Show Notifications", CurrentValue = Settings.NotificationsEnabled, Callback = function(v) Settings.NotificationsEnabled = v end })
 
 OtherTab:CreateSection("Info")
-OtherTab:CreateParagraph({ Title = "Script Info", Content = "Skibidi Defense Script\nVersion 2.2\nUnlock All Towers in Lobby" })
+OtherTab:CreateParagraph({ Title = "Script Info", Content = "Skibidi Defense Script\nVersion 2.3\nBypass Macros (Patched)\nMatch Tracker" })
 
 local VisualTab = Window:CreateTab("Visual", 10885652171)
 
@@ -1001,36 +1086,73 @@ VisualTab:CreateButton({ Name = "Reset All Tower Boosts", Callback = function() 
 local WebhookTab = Window:CreateTab("WebHook", 12465540157)
 
 WebhookTab:CreateSection("Webhook Settings")
-local Toggle_WebhookEnabled = WebhookTab:CreateToggle({ Name = "Enable Webhook", CurrentValue = Settings.WebhookEnabled, Callback = function(v) Settings.WebhookEnabled = v end })
-WebhookTab:CreateInput({ Name = "Webhook URL", PlaceholderText = "https://discord.com/api/webhooks/...", RemoveTextAfterFocusLost = false, Callback = function(Text) Settings.WebhookURL = Text end })
+local Toggle_WebhookEnabled = WebhookTab:CreateToggle({ Name = "Enable Webhook", CurrentValue = Settings.WebhookEnabled, Callback = function(v) Settings.WebhookEnabled = v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+WebhookTab:CreateInput({ Name = "Webhook URL", PlaceholderText = "https://discord.com/api/webhooks/...", RemoveTextAfterFocusLost = false, Callback = function(Text) Settings.WebhookURL = Text; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+
+WebhookTab:CreateSection("Match Tracker Settings")
+WebhookTab:CreateToggle({ Name = "Track Matches (Win/Loss)", CurrentValue = false, Callback = function(v) Settings.WebhookMatchTracking = v; if v then startMatchTracking() else stopMatchTracking() end; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+WebhookTab:CreateToggle({ Name = "Show Log in Webhook", CurrentValue = true, Callback = function(v) Settings.ShowLogInWebhook = v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 
 WebhookTab:CreateSection("Display Fields")
-local webhookDisplayFields = Settings.WebhookDisplayFields or {"Item"}
-local displayFieldsText = WebhookTab:CreateParagraph({ Title = "Selected Fields", Content = table.concat(webhookDisplayFields, ", ") })
-local function updateDisplayFieldsText() displayFieldsText:Set({ Title = "Selected Fields", Content = #webhookDisplayFields > 0 and table.concat(webhookDisplayFields, ", ") or "None" }); Settings.WebhookDisplayFields = webhookDisplayFields end
-WebhookTab:CreateDropdown({ Name = "Fields to Display", Options = {"Item", "Username", "GameName", "GameID", "Players", "Time"}, CurrentOption = webhookDisplayFields, MultipleOptions = true, Callback = function(opt) webhookDisplayFields = {}; if typeof(opt) == "table" then for _, v in ipairs(opt) do table.insert(webhookDisplayFields, v) end else table.insert(webhookDisplayFields, opt) end; updateDisplayFieldsText() end })
+local matchFieldsText = WebhookTab:CreateParagraph({ Title = "Selected Fields", Content = table.concat(Settings.WebhookMatchFields, ", ") })
+local function updateMatchFieldsText() matchFieldsText:Set({ Title = "Selected Fields", Content = #Settings.WebhookMatchFields > 0 and table.concat(Settings.WebhookMatchFields, ", ") or "None" }); Settings.WebhookMatchFields = Settings.WebhookMatchFields; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end
+WebhookTab:CreateDropdown({ Name = "Fields to Display", Options = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}, CurrentOption = Settings.WebhookMatchFields, MultipleOptions = true, Callback = function(opt) Settings.WebhookMatchFields = {}; if typeof(opt) == "table" then for _, v in ipairs(opt) do table.insert(Settings.WebhookMatchFields, v) end else table.insert(Settings.WebhookMatchFields, opt) end; updateMatchFieldsText() end })
 
-WebhookTab:CreateSection("Items to Track")
-local webhookSelectedItems = Settings.WebhookSelectedItems or {"JackpotPotion"}
-local webhookSelectedText = WebhookTab:CreateParagraph({ Title = "Tracked Items", Content = #webhookSelectedItems > 0 and table.concat(webhookSelectedItems, ", ") or "None" })
-local function updateWebhookSelectedText() local content = #webhookSelectedItems > 0 and table.concat(webhookSelectedItems, ", ") or "None"; webhookSelectedText:Set({ Title = "Tracked Items", Content = content }); Settings.WebhookSelectedItems = webhookSelectedItems end
-WebhookTab:CreateDropdown({ Name = "Items to Track", Options = {"JackpotPotion", "Luck2", "Time2", "Luck3", "Time3", "Remover"}, CurrentOption = webhookSelectedItems, MultipleOptions = true, Callback = function(opt) webhookSelectedItems = {}; if typeof(opt) == "table" then for _, v in ipairs(opt) do table.insert(webhookSelectedItems, v) end else table.insert(webhookSelectedItems, opt) end; updateWebhookSelectedText() end })
-WebhookTab:CreateButton({ Name = "Test Webhook", Callback = function() if Settings.WebhookEnabled and Settings.WebhookURL ~= "" then sendWebhook("TEST"); Rayfield:Notify({ Title = "Webhook", Content = "Test message sent!", Duration = 2, Image = 10885652171 }) else Rayfield:Notify({ Title = "Webhook", Content = "Enable webhook and set URL first!", Duration = 2, Image = 10885652171 }) end end })
+WebhookTab:CreateButton({ Name = "Reset Win Streak & Total Credits", Callback = function() winStreak = 0; totalCredits = 0; Rayfield:Notify({ Title = "Reset", Content = "Reset to 0", Duration = 2 }) end })
+
+WebhookTab:CreateButton({ Name = "Test Webhook", Callback = function()
+    if Settings.WebhookEnabled and Settings.WebhookURL ~= "" then
+        local testFields = {}
+        for _, field in ipairs(Settings.WebhookMatchFields) do
+            if field == "Result" then
+                table.insert(testFields, { name = "🎯 Результат", value = "ТЕСТ", inline = false })
+            elseif field == "Streak" then
+                table.insert(testFields, { name = "📊 Win Streak", value = "3", inline = true })
+            elseif field == "Kills" then
+                table.insert(testFields, { name = "⚔️ Убийств", value = "999", inline = true })
+            elseif field == "Survived" then
+                table.insert(testFields, { name = "🛡️ Выжил", value = "25", inline = true })
+            elseif field == "Time" then
+                table.insert(testFields, { name = "⏱️ Время", value = "12:34", inline = true })
+            elseif field == "Items" then
+                table.insert(testFields, { name = "🎁 Предметов", value = "99", inline = true })
+            elseif field == "Credits" then
+                table.insert(testFields, { name = "💰 Кредитов", value = "20000", inline = true })
+            elseif field == "Crystals" then
+                table.insert(testFields, { name = "💎 Кристаллов", value = "999", inline = true })
+            elseif field == "Spent" then
+                table.insert(testFields, { name = "💸 Потрачено", value = "999", inline = false })
+            elseif field == "Player" then
+                table.insert(testFields, { name = "👤 Игрок", value = game.Players.LocalPlayer.Name, inline = true })
+            elseif field == "TotalCredits" then
+                table.insert(testFields, { name = "💰 Total Credits", value = "60000", inline = false })
+            end
+        end
+        sendMatchWebhook(testFields)
+        Rayfield:Notify({ Title = "Webhook Test", Content = "Test message sent!", Duration = 2 })
+    else
+        Rayfield:Notify({ Title = "Webhook Test", Content = "Enable webhook and set URL first!", Duration = 3 })
+    end
+end })
 
 local UpdateTab = Window:CreateTab("Update Log", 15567843390)
 UpdateTab:CreateSection("📌 Version")
-UpdateTab:CreateParagraph({ Title = "Version", Content = "2.2" })
+UpdateTab:CreateParagraph({ Title = "Version", Content = "2.3" })
 UpdateTab:CreateSection("📅 Update Date")
-UpdateTab:CreateParagraph({ Title = "Update Date", Content = "21.04.2026" })
+UpdateTab:CreateParagraph({ Title = "Update Date", Content = "11.05.2026" })
 UpdateTab:CreateSection("🆕 What's New")
-UpdateTab:CreateParagraph({ Title = "What's New v2.2", Content = "✅ Added Webhook System\n✅ Added Show RNG In Plaza (only selected items)\n✅ Removed RNG Teleport" })
+UpdateTab:CreateParagraph({ Title = "What's New v2.3", Content = "✅ Bypass Macros (Patched)\n✅ Match Tracker with Win Streak\n✅ Total Credits Counter" })
 UpdateTab:CreateSection("📝 Changelog")
 UpdateTab:CreateParagraph({ Title = "Changelog", Content = [[
+v2.3 (11.05.2026)
+- Added Bypass Macros (Patched)
+- Added Match Tracker with Win Streak
+- Added Total Credits Counter
+- Removed AutoRNG
+- Removed Item Webhook
+
 v2.2 (21.04.2026)
-- Added Webhook System
 - Added Show RNG In Plaza
-- Shows only: JackpotPotion, Luck2, Time2, Luck3, Time3, Remover
-- Removed RNG Teleport
 
 v2.1 (17.04.2026)
 - Added Potato Graphics Mode
@@ -1040,7 +1162,6 @@ v2.1 (17.04.2026)
 v2.0
 - Added Info section
 - Added Show All Towers
-- Added Anti Macro
 ]] })
 
 local HttpService = game:GetService("HttpService")
@@ -1053,27 +1174,27 @@ Settings.AutoLoadEnabled = true
 
 local function loadDefault()
     Settings.ShowAllTowers = false
-    Settings.AutoRng = false
     Settings.AntiMacro = false
     Settings.AntiAFK = false
-    Settings.SelectedRngItems = {}
     Settings.NotificationsEnabled = true
     Settings.BlurEnabled = false
     Settings.InstantProxMount = false
     Settings.PotatoGraphics = false
     Settings.WebhookEnabled = false
     Settings.WebhookURL = ""
-    Settings.WebhookDisplayFields = {"Item"}
-    Settings.WebhookSelectedItems = {"JackpotPotion"}
-    Settings.ShowRNGInPlaza = false
+    Settings.WebhookMatchTracking = false
+    Settings.ShowLogInWebhook = true
+    Settings.WebhookMatchFields = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
     Toggle_BlurEnabled:Set(Settings.BlurEnabled)
     Toggle_InstantProxMount:Set(Settings.InstantProxMount)
-    Toggle_ShowRNGInPlaza:Set(Settings.ShowRNGInPlaza)
+    Toggle_AntiMacro:Set(Settings.AntiMacro)
+    Toggle_WebhookEnabled:Set(Settings.WebhookEnabled)
     updateMenuBlur()
     applyInstantProxMount("restore")
     savedPosition = nil
     savedCoordsText = "(None)"
     teleportButton:Set("Teleport to Position (None)")
+    updateMatchFieldsText()
 end
 
 local function saveConfig(name)
@@ -1081,19 +1202,17 @@ local function saveConfig(name)
     local hrp = getHRP()
     local data = {
         ShowAllTowers = Settings.ShowAllTowers,
-        AutoRng = Settings.AutoRng,
         AntiMacro = Settings.AntiMacro,
         AntiAFK = Settings.AntiAFK,
-        SelectedRngItems = Settings.SelectedRngItems,
         NotificationsEnabled = Settings.NotificationsEnabled,
         BlurEnabled = Settings.BlurEnabled,
         InstantProxMount = Settings.InstantProxMount,
         PotatoGraphics = Settings.PotatoGraphics,
         WebhookEnabled = Settings.WebhookEnabled,
         WebhookURL = Settings.WebhookURL,
-        WebhookDisplayFields = Settings.WebhookDisplayFields,
-        WebhookSelectedItems = Settings.WebhookSelectedItems,
-        ShowRNGInPlaza = Settings.ShowRNGInPlaza,
+        WebhookMatchTracking = Settings.WebhookMatchTracking,
+        ShowLogInWebhook = Settings.ShowLogInWebhook,
+        WebhookMatchFields = Settings.WebhookMatchFields,
         SavedPosition = hrp and { X = hrp.Position.X, Y = hrp.Position.Y, Z = hrp.Position.Z } or nil
     }
     writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
@@ -1105,53 +1224,35 @@ local function loadConfig(name)
     if not isfile(path) then return end
     local data = HttpService:JSONDecode(readfile(path))
     Settings.ShowAllTowers = data.ShowAllTowers
-    Settings.AutoRng = data.AutoRng
     Settings.AntiMacro = data.AntiMacro
     Settings.AntiAFK = data.AntiAFK
-    Settings.SelectedRngItems = data.SelectedRngItems or {}
     Settings.NotificationsEnabled = data.NotificationsEnabled
     Settings.BlurEnabled = data.BlurEnabled or false
     Settings.InstantProxMount = data.InstantProxMount or false
     Settings.PotatoGraphics = data.PotatoGraphics
     Settings.WebhookEnabled = data.WebhookEnabled or false
     Settings.WebhookURL = data.WebhookURL or ""
-    Settings.WebhookDisplayFields = data.WebhookDisplayFields or {"Item"}
-    Settings.WebhookSelectedItems = data.WebhookSelectedItems or {"JackpotPotion"}
-    Settings.ShowRNGInPlaza = data.ShowRNGInPlaza or false
+    Settings.WebhookMatchTracking = data.WebhookMatchTracking or false
+    Settings.ShowLogInWebhook = data.ShowLogInWebhook or true
+    Settings.WebhookMatchFields = data.WebhookMatchFields or {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
 
     Toggle_ShowAllTowers:Set(Settings.ShowAllTowers)
-    Toggle_AutoRng:Set(Settings.AutoRng)
     Toggle_AntiMacro:Set(Settings.AntiMacro)
     Toggle_NotificationsEnabled:Set(Settings.NotificationsEnabled)
     Toggle_BlurEnabled:Set(Settings.BlurEnabled)
     Toggle_InstantProxMount:Set(Settings.InstantProxMount)
     Toggle_PotatoGraphics:Set(Settings.PotatoGraphics)
     Toggle_WebhookEnabled:Set(Settings.WebhookEnabled)
-    Toggle_ShowRNGInPlaza:Set(Settings.ShowRNGInPlaza)
     
     updateMenuBlur()
     if Settings.InstantProxMount then applyInstantProxMount("set") else applyInstantProxMount("restore") end
     stopShowAllTowers(); if Settings.ShowAllTowers then startShowAllTowers() end
-    stopAntiMacro(); if Settings.AntiMacro then startAntiMacro() end
-    if autoRngLoop then task.cancel(autoRngLoop); autoRngLoop = nil end
-    isCollecting = false
-    if Settings.AutoRng then startAutoRngLoop() end
+    if Settings.AntiMacro then startAntiMacro() else stopAntiMacro() end
     if Settings.AntiAFK then startAntiAFK() end
     if Settings.PotatoGraphics then enablePotatoGraphics() else disablePotatoGraphics() end
+    if Settings.WebhookMatchTracking then startMatchTracking() else stopMatchTracking() end
     
-    selectedItems = {}; for _,v in ipairs(Settings.SelectedRngItems) do table.insert(selectedItems,v) end; updateSelectedText()
-    webhookSelectedItems = {}; for _,v in ipairs(Settings.WebhookSelectedItems) do table.insert(webhookSelectedItems,v) end; updateWebhookSelectedText()
-    webhookDisplayFields = {}; for _,v in ipairs(Settings.WebhookDisplayFields) do table.insert(webhookDisplayFields,v) end; updateDisplayFieldsText()
-    
-    showRNGButtons = Settings.ShowRNGInPlaza
-    findRNGGui()
-    if rngGui and showRNGButtons then
-        setRNGButtonsVisible(true)
-        setRNGButtonsHeight(85)
-    elseif rngGui and not showRNGButtons then
-        setRNGButtonsVisible(false)
-        resetRNGButtonsSize()
-    end
+    updateMatchFieldsText()
     
     if data.SavedPosition then
         savedPosition = CFrame.new(data.SavedPosition.X, data.SavedPosition.Y, data.SavedPosition.Z)
@@ -1169,7 +1270,7 @@ local function AutoLoad() if not Settings.AutoLoadEnabled then return end; if is
 local ConfigTab = Window:CreateTab("Config", 11956055886)
 local selectedLabel = ConfigTab:CreateParagraph({ Title = "Selected Config", Content = "default" })
 local function updateSelected() selectedLabel:Set({ Title = "Selected Config", Content = currentConfig }) end
-local configDropdown = ConfigTab:CreateDropdown({ Name = "Configs", Options = {"default"}, CurrentOption = {"default"}, Callback = function(opt) currentConfig = type(opt)=="table" and opt[1] or opt; updateSelected() end })
+local configDropdown = ConfigTab:CreateDropdown({ Name = "Configs", Options = {"default"}, CurrentOption = {"default"}, Callback = function(opt) currentConfig = type(opt)=="table" and opt[1] or opt; updateSelected(); loadConfig(currentConfig) end })
 local function refreshDropdown()
     local map = { ["default"] = true }
     local ok, files = pcall(function() return listfiles(CONFIG_FOLDER) end)
@@ -1187,14 +1288,16 @@ ConfigTab:CreateButton({ Name = "Create", Callback = function() if inputName==""
 ConfigTab:CreateButton({ Name = "Save", Callback = function() if not currentConfig then return end; saveConfig(currentConfig); AutoSave(); refreshDropdown() end })
 ConfigTab:CreateButton({ Name = "Load", Callback = function() if not currentConfig then return end; loadConfig(currentConfig) end })
 ConfigTab:CreateButton({ Name = "Delete", Callback = function() if currentConfig=="default" then return end; local path = CONFIG_FOLDER.."/"..currentConfig..".json"; if isfile(path) then delfile(path) end; currentConfig="default"; loadDefault(); refreshDropdown(); updateSelected() end })
-ConfigTab:CreateToggle({ Name = "Auto Load", CurrentValue = Settings.AutoLoadEnabled, Callback = function(v) Settings.AutoLoadEnabled=v end })
-ConfigTab:CreateToggle({ Name = "Auto Save", CurrentValue = Settings.AutoSaveEnabled, Callback = function(v) Settings.AutoSaveEnabled=v end })
+ConfigTab:CreateToggle({ Name = "Auto Load", CurrentValue = Settings.AutoLoadEnabled, Callback = function(v) Settings.AutoLoadEnabled=v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+ConfigTab:CreateToggle({ Name = "Auto Save", CurrentValue = Settings.AutoSaveEnabled, Callback = function(v) Settings.AutoSaveEnabled=v; if v and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 
 task.spawn(function()
     task.wait(1)
     AutoLoad()
     updateSelected()
-    webhookSelectedItems = {}; for _,v in ipairs(Settings.WebhookSelectedItems) do table.insert(webhookSelectedItems,v) end; updateWebhookSelectedText()
-    webhookDisplayFields = {}; for _,v in ipairs(Settings.WebhookDisplayFields) do table.insert(webhookDisplayFields,v) end; updateDisplayFieldsText()
 end)
 task.spawn(function() while true do task.wait(20); AutoSave() end end)
+
+print("✅ Skibidi Defense Script v2.3 Loaded!")
+print("📌 Bypass Macros (Patched) - вкладка Main")
+print("📌 Match Tracker - вкладка WebHook")
