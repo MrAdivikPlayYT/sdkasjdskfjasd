@@ -27,6 +27,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local Settings = {
     ShowAllTowers = false,
@@ -42,7 +43,14 @@ local Settings = {
     WebhookURL = "",
     WebhookMatchTracking = false,
     ShowLogInWebhook = true,
-    WebhookMatchFields = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
+    WebhookMatchFields = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"},
+    WalkChance = 40,
+    JumpChance = 15,
+    MoveDurationMin = 0.8,
+    MoveDurationMax = 2.5,
+    PauseMin = 0.05,
+    PauseMax = 0.3,
+    MacroModes = {},
 }
 
 local winStreak = 0
@@ -774,6 +782,88 @@ local function stopShowAllTowers()
     restoreOriginalTowers()
 end
 
+-- ====== WALKING MACRO (WASD + JUMP ONLY) ======
+local walkRunning = false
+local walkThread = nil
+local walkKeys = {}
+
+local function releaseWalkKeys()
+    for k in pairs(walkKeys) do
+        pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[k], false, nil) end)
+    end
+    walkKeys = {}
+end
+
+local function pressWalkKey(k)
+    if walkKeys[k] then return end
+    walkKeys[k] = true
+    pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[k], false, nil) end)
+end
+
+local function releaseWalkKey(k)
+    if not walkKeys[k] then return end
+    walkKeys[k] = nil
+    pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[k], false, nil) end)
+end
+
+local function walkJump()
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, nil)
+        task.wait(0.05 + math.random() * 0.1)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, nil)
+    end)
+end
+
+local walkDirs = {{"W"}, {"S"}, {"A"}, {"D"}, {"W","D"}, {"W","A"}, {"S","D"}, {"S","A"}}
+local function randWalkDir() return walkDirs[math.random(1, #walkDirs)] end
+
+local function walkLoop()
+    while walkRunning do
+        if not table.find(Settings.MacroModes, "Walking") then
+            task.wait(1)
+            releaseWalkKeys()
+            return
+        end
+        local r = math.random(1, 100)
+        local wc = Settings.WalkChance
+        local jc = wc + Settings.JumpChance
+
+        if r <= wc then
+            local d = randWalkDir()
+            for _, k in ipairs(d) do pressWalkKey(k) end
+            task.wait(Settings.MoveDurationMin + math.random() * (Settings.MoveDurationMax - Settings.MoveDurationMin))
+            for _, k in ipairs(d) do releaseWalkKey(k) end
+        elseif r <= jc then
+            local d = randWalkDir()
+            for _, k in ipairs(d) do pressWalkKey(k) end
+            walkJump()
+            task.wait(0.3 + math.random() * 0.8)
+            for _, k in ipairs(d) do releaseWalkKey(k) end
+        else
+            task.wait(0.5 + math.random() * 1.5)
+        end
+
+        task.wait(Settings.PauseMin + math.random() * Settings.PauseMax)
+        if math.random(1, 15) == 1 then releaseWalkKeys() end
+    end
+    releaseWalkKeys()
+end
+
+local function startWalkMacro()
+    if walkRunning then return end
+    walkRunning = true
+    walkThread = task.spawn(walkLoop)
+    Rayfield:Notify({ Title = "Walking Macro", Content = "Started (WASD + Jump)", Duration = 2 })
+end
+
+local function stopWalkMacro()
+    if not walkRunning then return end
+    walkRunning = false
+    if walkThread then task.cancel(walkThread); walkThread = nil end
+    releaseWalkKeys()
+    Rayfield:Notify({ Title = "Walking Macro", Content = "Stopped", Duration = 2 })
+end
+
 local Window = Rayfield:CreateWindow({ Name="Skibidi Defense Script (Private)", LoadingTitle="Loading...", LoadingSubtitle="Ready", ConfigurationSaving={Enabled=false}, KeySystem=false })
 
 updateMenuBlur()
@@ -855,14 +945,11 @@ MainTab:CreateButton({ Name = "Bypass Jeffry", Callback = function() for _, obj 
 
 local Toggle_ShowAllTowers = MainTab:CreateToggle({ Name = "Show All Towers", CurrentValue = Settings.ShowAllTowers, Callback = function(v) Settings.ShowAllTowers = v; if v then startShowAllTowers(); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Show All Towers", Content = "Enabled - All towers are visible", Duration = 2, Image = 10885652171 }) end else stopShowAllTowers(); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Show All Towers", Content = "Disabled - Towers restored", Duration = 2, Image = 10885652171 }) end end end })
 
-MainTab:CreateSection("Game")
-
 local function getHRP()
     local c = game.Players.LocalPlayer.Character
     return c and c:FindFirstChild("HumanoidRootPart")
 end
 
--- Bypass Macros (Patched)
 local camConn = nil
 local lockedCF = nil
 local function getShakeOffset()
@@ -879,18 +966,14 @@ local function disableAntiMacroScripts()
     pcall(function()
         local char = player.Character or player.CharacterAdded:Wait()
         local anti = char:FindFirstChild("antimacro")
-        if anti and anti:IsA("LocalScript") then
-            anti.Enabled = false
-        end
+        if anti and anti:IsA("LocalScript") then anti.Enabled = false end
     end)
     pcall(function()
         local starter = game:GetService("StarterPlayer")
         local scs = starter:FindFirstChild("StarterCharacterScripts")
         if scs then
             local anti = scs:FindFirstChild("antimacro")
-            if anti and anti:IsA("LocalScript") then
-                anti.Enabled = false
-            end
+            if anti and anti:IsA("LocalScript") then anti.Enabled = false end
         end
     end)
 end
@@ -905,38 +988,76 @@ local function startAntiMacro()
     camConn = RunService.RenderStepped:Connect(function()
         if not Settings.AntiMacro then return end
         if not lockedCF then return end
-        local x, y = getShakeOffset()
-        cam.CFrame = lockedCF * CFrame.new(x, y, 0)
+        local cf = lockedCF
+        if table.find(Settings.MacroModes, "Shiking") then
+            local x, y = getShakeOffset()
+            cf = cf * CFrame.new(x, y, 0)
+        end
+        cam.CFrame = cf
     end)
 end
 
 local function stopAntiMacro()
-    if camConn then
-        camConn:Disconnect()
-        camConn = nil
-    end
+    if camConn then camConn:Disconnect(); camConn = nil end
     local cam = workspace.CurrentCamera
-    if cam then
-        cam.CameraType = Enum.CameraType.Custom
-    end
+    if cam then cam.CameraType = Enum.CameraType.Custom end
     lockedCF = nil
 end
 
-local Toggle_AntiMacro = MainTab:CreateToggle({ Name = "Bypass Macros (Patched)", CurrentValue = Settings.AntiMacro, Callback = function(v)
+MainTab:CreateSection("Macro")
+
+MainTab:CreateParagraph({
+    Title = "Bypass Macros",
+    Content = "Camera Lock + Shake / Walking\nВыбери режимы в списке ниже"
+})
+
+local Toggle_AntiMacro = MainTab:CreateToggle({ Name = "Camera Lock", CurrentValue = Settings.AntiMacro, Callback = function(v)
     Settings.AntiMacro = v
     if v then
         startAntiMacro()
-        Rayfield:Notify({ Title = "Bypass Macros", Content = "Camera Locked + Scripts Disabled", Duration = 3 })
+        if table.find(Settings.MacroModes, "Walking") then startWalkMacro() end
+        Rayfield:Notify({ Title = "Camera Lock", Content = "ON", Duration = 2 })
     else
         stopAntiMacro()
-        Rayfield:Notify({ Title = "Bypass Macros", Content = "Disabled", Duration = 2 })
+        stopWalkMacro()
+        Rayfield:Notify({ Title = "Camera Lock", Content = "OFF", Duration = 2 })
     end
 end })
 
-MainTab:CreateParagraph({
-    Title = "Info",
-    Content = "Камера стоит на месте\nИгрок может двигаться\nКамера только трясется\nAntiMacro отключается навсегда"
+local macroDropdown = MainTab:CreateDropdown({
+    Name = "Macro Modes",
+    Options = {"Shiking", "Walking"},
+    CurrentOption = Settings.MacroModes,
+    MultipleOptions = true,
+    Callback = function(opt)
+        Settings.MacroModes = {}
+        if typeof(opt) == "table" then
+            for _, v in ipairs(opt) do table.insert(Settings.MacroModes, v) end
+        else
+            table.insert(Settings.MacroModes, opt)
+        end
+        if not Settings.AntiMacro then
+            Settings.MacroModes = {}
+            macroDropdown:Set({})
+            Rayfield:Notify({ Title = "Macro Modes", Content = "Включи Camera Lock сначала", Duration = 2 })
+            return
+        end
+        local hasWalking = table.find(Settings.MacroModes, "Walking")
+        local parts = {"Shiking"}
+        if hasWalking then startWalkMacro(); table.insert(parts, "Walking") else stopWalkMacro() end
+        if Settings.NotificationsEnabled then
+            Rayfield:Notify({ Title = "Macro Modes", Content = table.concat(parts, " + "), Duration = 1 })
+        end
+    end
 })
+
+MainTab:CreateSection("Walk Settings")
+MainTab:CreateSlider({ Name = "Walk Chance (%)", Range = {0, 90}, Increment = 5, CurrentValue = Settings.WalkChance, Callback = function(v) Settings.WalkChance = v end })
+MainTab:CreateSlider({ Name = "Jump Chance (%)", Range = {0, 50}, Increment = 5, CurrentValue = Settings.JumpChance, Callback = function(v) Settings.JumpChance = v end })
+MainTab:CreateSlider({ Name = "Move Min (s)", Range = {0.2, 3}, Increment = 0.2, CurrentValue = Settings.MoveDurationMin, Callback = function(v) Settings.MoveDurationMin = v end })
+MainTab:CreateSlider({ Name = "Move Max (s)", Range = {0.5, 5}, Increment = 0.2, CurrentValue = Settings.MoveDurationMax, Callback = function(v) Settings.MoveDurationMax = v end })
+MainTab:CreateSlider({ Name = "Pause Min (s)", Range = {0, 1}, Increment = 0.05, CurrentValue = Settings.PauseMin, Callback = function(v) Settings.PauseMin = v end })
+MainTab:CreateSlider({ Name = "Pause Max (s)", Range = {0.1, 2}, Increment = 0.05, CurrentValue = Settings.PauseMax, Callback = function(v) Settings.PauseMax = v end })
 
 local savedPosition = nil
 local savedCoordsText = "(None)"
@@ -1066,7 +1187,7 @@ local Toggle_BlurEnabled = OtherTab:CreateToggle({ Name = "Blur", CurrentValue =
 local Toggle_NotificationsEnabled = OtherTab:CreateToggle({ Name = "Show Notifications", CurrentValue = Settings.NotificationsEnabled, Callback = function(v) Settings.NotificationsEnabled = v end })
 
 OtherTab:CreateSection("Info")
-OtherTab:CreateParagraph({ Title = "Script Info", Content = "Skibidi Defense Script\nVersion 2.3\nBypass Macros (Patched)\nMatch Tracker" })
+OtherTab:CreateParagraph({ Title = "Script Info", Content = "Skibidi Defense Script\nVersion 2.4\nCamera Lock + Shiking + Walking\nMatch Tracker" })
 
 local VisualTab = Window:CreateTab("Visual", 10885652171)
 
@@ -1137,13 +1258,18 @@ end })
 
 local UpdateTab = Window:CreateTab("Update Log", 15567843390)
 UpdateTab:CreateSection("📌 Version")
-UpdateTab:CreateParagraph({ Title = "Version", Content = "2.3" })
+UpdateTab:CreateParagraph({ Title = "Version", Content = "2.4" })
 UpdateTab:CreateSection("📅 Update Date")
-UpdateTab:CreateParagraph({ Title = "Update Date", Content = "11.05.2026" })
+UpdateTab:CreateParagraph({ Title = "Update Date", Content = "12.05.2026" })
 UpdateTab:CreateSection("🆕 What's New")
-UpdateTab:CreateParagraph({ Title = "What's New v2.3", Content = "✅ Bypass Macros (Patched)\n✅ Match Tracker with Win Streak\n✅ Total Credits Counter" })
+UpdateTab:CreateParagraph({ Title = "What's New v2.4", Content = "✅ Multi-select макро: Shiking + Walking\n✅ Camera Lock отдельно\n✅ Настраиваемые шансы и паузы" })
 UpdateTab:CreateSection("📝 Changelog")
 UpdateTab:CreateParagraph({ Title = "Changelog", Content = [[
+v2.4 (12.05.2026)
+- Multi-select dropdown: Shiking + Walking
+- Camera Lock отдельный тогл
+- Walking (WASD + Jump) с настройками
+
 v2.3 (11.05.2026)
 - Added Bypass Macros (Patched)
 - Added Match Tracker with Win Streak
@@ -1185,10 +1311,12 @@ local function loadDefault()
     Settings.WebhookMatchTracking = false
     Settings.ShowLogInWebhook = true
     Settings.WebhookMatchFields = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
+    Settings.MacroModes = {}
     Toggle_BlurEnabled:Set(Settings.BlurEnabled)
     Toggle_InstantProxMount:Set(Settings.InstantProxMount)
     Toggle_AntiMacro:Set(Settings.AntiMacro)
     Toggle_WebhookEnabled:Set(Settings.WebhookEnabled)
+    if macroDropdown then macroDropdown:Set({}) end
     updateMenuBlur()
     applyInstantProxMount("restore")
     savedPosition = nil
@@ -1213,6 +1341,7 @@ local function saveConfig(name)
         WebhookMatchTracking = Settings.WebhookMatchTracking,
         ShowLogInWebhook = Settings.ShowLogInWebhook,
         WebhookMatchFields = Settings.WebhookMatchFields,
+        MacroModes = Settings.MacroModes,
         SavedPosition = hrp and { X = hrp.Position.X, Y = hrp.Position.Y, Z = hrp.Position.Z } or nil
     }
     writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
@@ -1235,6 +1364,7 @@ local function loadConfig(name)
     Settings.WebhookMatchTracking = data.WebhookMatchTracking or false
     Settings.ShowLogInWebhook = data.ShowLogInWebhook or true
     Settings.WebhookMatchFields = data.WebhookMatchFields or {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
+    Settings.MacroModes = data.MacroModes or {"Walking"}
 
     Toggle_ShowAllTowers:Set(Settings.ShowAllTowers)
     Toggle_AntiMacro:Set(Settings.AntiMacro)
@@ -1243,11 +1373,11 @@ local function loadConfig(name)
     Toggle_InstantProxMount:Set(Settings.InstantProxMount)
     Toggle_PotatoGraphics:Set(Settings.PotatoGraphics)
     Toggle_WebhookEnabled:Set(Settings.WebhookEnabled)
+    if macroDropdown then macroDropdown:Set(Settings.MacroModes) end
     
     updateMenuBlur()
     if Settings.InstantProxMount then applyInstantProxMount("set") else applyInstantProxMount("restore") end
     stopShowAllTowers(); if Settings.ShowAllTowers then startShowAllTowers() end
-    if Settings.AntiMacro then startAntiMacro() else stopAntiMacro() end
     if Settings.AntiAFK then startAntiAFK() end
     if Settings.PotatoGraphics then enablePotatoGraphics() else disablePotatoGraphics() end
     if Settings.WebhookMatchTracking then startMatchTracking() else stopMatchTracking() end
@@ -1298,6 +1428,7 @@ task.spawn(function()
 end)
 task.spawn(function() while true do task.wait(20); AutoSave() end end)
 
-print("✅ Skibidi Defense Script v2.3 Loaded!")
-print("📌 Bypass Macros (Patched) - вкладка Main")
+print("✅ Skibidi Defense Script v2.4 Loaded!")
+print("📌 Camera Lock - отдельный тогл")
+print("📌 Shiking + Walking - мультиселект")
 print("📌 Match Tracker - вкладка WebHook")
