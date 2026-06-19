@@ -9,7 +9,7 @@ local function decrypt(s)
 end
 
 local allowed=false
-for _,v in ipairs({"6:8884<59<", "636;6635:", "5363<54474", "67::79;3;4", "443676<;39", "43;39638:53", "43;564599::"}) do
+for _,v in ipairs({"6:8884<59<", "636;6635:", "5363<54474", "67::79;3;4", "443676<;39", "43;39638:53", "43;564599::", "4434494<498"}) do
     local decrypted = decrypt(v)
     local num = tonumber(decrypted)
     if num and num == game.Players.LocalPlayer.UserId then
@@ -23,18 +23,52 @@ if not allowed then
     return
 end
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+if _G.SkibidiGUI then pcall(function() _G.SkibidiGUI:Destroy() end) end
+if getgenv and getgenv().SkibidiGUI then pcall(function() getgenv().SkibidiGUI:Destroy() end) end
+pcall(function()
+    local oldBlur = Lighting:FindFirstChild("MenuBlur")
+    if oldBlur then oldBlur:Destroy() end
+end)
+
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local HttpService = game:GetService("HttpService")
+
+local Fluent = nil
+local loadSuccess, loadErr = pcall(function()
+    Fluent = loadstring(game:HttpGet("https://github.com/1dontgiveaf/Fluent/releases/latest/download/main.lua"))()
+end)
+if not loadSuccess or not Fluent then
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Skibidi Defense",
+            Text = "Failed to load UI module. Retrying...",
+            Duration = 5
+        })
+    end)
+    task.wait(2)
+    Fluent = loadstring(game:HttpGet("https://github.com/1dontgiveaf/Fluent/releases/latest/download/main.lua"))()
+end
+if not Fluent then
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Skibidi Defense",
+            Text = "Critical: UI module failed to load!",
+            Duration = 10
+        })
+    end)
+    return
+end
 
 local Settings = {
     ShowAllTowers = false,
+    BlackMarket = false,
+    RNG = false,
     AntiMacro = false,
     AntiAFK = false,
     NotificationsEnabled = true,
-    BlurEnabled = false,
     InstantProxMount = false,
     PotatoGraphics = false,
     GameSpeed = 1,
@@ -60,66 +94,20 @@ local endedConnection = nil
 local endedBoolValue = nil
 local currentConfig = "default"
 
-local menuBlur = Lighting:FindFirstChild("MenuBlur")
-if not menuBlur then
-    menuBlur = Instance.new("BlurEffect")
-    menuBlur.Name = "MenuBlur"
-    menuBlur.Parent = Lighting
-end
-menuBlur.Size = 0
-menuBlur.Enabled = false
-
-local blurTween = nil
-local blurTweenId = 0
-local blurWatcherStarted = false
-
-local function isRayfieldVisible()
-    local ok, visible = pcall(function()
-        return Rayfield:IsVisible()
-    end)
-    return ok and visible == true
-end
-
-local function tweenMenuBlur(size, time)
-    blurTweenId = blurTweenId + 1
-    local thisTweenId = blurTweenId
-    if blurTween then blurTween:Cancel() end
-    if size > 0 then menuBlur.Enabled = true end
-    blurTween = TweenService:Create(menuBlur, TweenInfo.new(time or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = size })
-    blurTween.Completed:Connect(function(playbackState)
-        if thisTweenId == blurTweenId and size <= 0 and playbackState == Enum.PlaybackState.Completed then
-            menuBlur.Enabled = false
+local function notifyUser(title, content, duration)
+    pcall(function()
+        if Settings.NotificationsEnabled then
+            Fluent:Notify({
+                Title = title,
+                Content = content,
+                Duration = duration or 3
+            })
         end
     end)
-    blurTween:Play()
 end
 
-local function updateMenuBlur()
-    if not Settings.BlurEnabled then
-        tweenMenuBlur(0, 0.2)
-        return
-    end
-    if isRayfieldVisible() then
-        tweenMenuBlur(32, 0.25)
-    else
-        tweenMenuBlur(0, 0.25)
-    end
-end
-
-local function startMenuBlurWatcher()
-    if blurWatcherStarted then return end
-    blurWatcherStarted = true
-    task.spawn(function()
-        local lastState = isRayfieldVisible()
-        while true do
-            task.wait(0.1)
-            local visible = isRayfieldVisible()
-            if visible ~= lastState then
-                lastState = visible
-                updateMenuBlur()
-            end
-        end
-    end)
+local function setButtonText(btn, text)
+    notifyUser("Info", text, 2)
 end
 
 local showAllTowersConnection = nil
@@ -484,9 +472,7 @@ local function applyBoost(boostType, value)
             end
         end
     end
-    if Settings.NotificationsEnabled then
-        Rayfield:Notify({ Title = "Tower Boosts", Content = boostType .. " = " .. tostring(value) .. " (" .. count .. " towers)", Duration = 2, Image = 10885652171 })
-    end
+    notifyUser("Tower Boosts", boostType .. " = " .. tostring(value) .. " (" .. count .. " towers)", 2)
 end
 
 local function applyBoostSafe(boostType, value)
@@ -529,9 +515,7 @@ local function resetBoosts()
     originalBoosts = {}
     createdSpecial = {}
     createdBoostsList = {}
-    if Settings.NotificationsEnabled then
-        Rayfield:Notify({ Title = "Tower Boosts", Content = "All boosts reset to original values", Duration = 2, Image = 10885652171 })
-    end
+    notifyUser("Tower Boosts", "All boosts reset to original values", 2)
 end
 
 task.spawn(function()
@@ -562,9 +546,7 @@ local function setGameSpeed(speed)
             newSpeed.Value = speed
             newSpeed.Parent = newGameFolder
         end
-        if Settings.NotificationsEnabled then
-            Rayfield:Notify({ Title = "Game Speed", Content = "Set to: " .. speed .. "x", Duration = 1, Image = 10885652171 })
-        end
+        notifyUser("Game Speed", "Set to: " .. speed .. "x", 1)
     end)
 end
 
@@ -693,9 +675,7 @@ local function enablePotatoGraphics()
             if i % 500 == 0 then task.wait() end
         end
         descendantConnection = game.DescendantAdded:Connect(optimizeObject)
-        if Settings.NotificationsEnabled then
-            Rayfield:Notify({ Title = "Potato Graphics", Content = "ON - FPS Boost", Duration = 2, Image = 10885652171 })
-        end
+        notifyUser("Potato Graphics", "ON - FPS Boost", 2)
     end)
 end
 
@@ -729,9 +709,7 @@ local function disablePotatoGraphics()
             Terrain.WaterReflectance = savedSettings.WaterReflectance
             Terrain.WaterTransparency = savedSettings.WaterTransparency
         end
-        if Settings.NotificationsEnabled then
-            Rayfield:Notify({ Title = "Potato Graphics", Content = "OFF - Effects Restored", Duration = 2, Image = 10885652171 })
-        end
+        notifyUser("Potato Graphics", "OFF - Effects Restored", 2)
     end)
 end
 
@@ -782,7 +760,94 @@ local function stopShowAllTowers()
     restoreOriginalTowers()
 end
 
--- ====== WALKING MACRO (WASD + JUMP ONLY) ======
+local blackMarketConnection = nil
+local function showBlackMarket()
+    pcall(function()
+        local player = game.Players.LocalPlayer
+        local pg = player:FindFirstChild("PlayerGui")
+        if not pg then return end
+        local sg = pg:FindFirstChild("BLACKMARKET")
+        if not sg then return end
+        sg.Enabled = true
+        local main = sg:FindFirstChild("Main")
+        if main then main.Visible = true end
+    end)
+end
+
+local function startBlackMarket()
+    if blackMarketConnection then return end
+    showBlackMarket()
+    blackMarketConnection = RunService.Stepped:Connect(function()
+        if Settings.BlackMarket then showBlackMarket() end
+    end)
+end
+
+local function stopBlackMarket()
+    if blackMarketConnection then blackMarketConnection:Disconnect(); blackMarketConnection = nil end
+    pcall(function()
+        local player = game.Players.LocalPlayer
+        local pg = player:FindFirstChild("PlayerGui")
+        if not pg then return end
+        local sg = pg:FindFirstChild("BLACKMARKET")
+        if not sg then return end
+        sg.Enabled = false
+        local main = sg:FindFirstChild("Main")
+        if main then main.Visible = false end
+    end)
+end
+
+local rngConnection = nil
+local function showRNG()
+    pcall(function()
+        local player = game.Players.LocalPlayer
+        local pg = player:FindFirstChild("PlayerGui")
+        if not pg then return end
+        local rng = pg:FindFirstChild("RNG")
+        if not rng then return end
+        rng.Enabled = true
+        local roll = rng:FindFirstChild("Roll")
+        if roll then roll.Position = UDim2.new(roll.Position.X.Scale, roll.Position.X.Offset, 0, 820) end
+        local rollSpeed = rng:FindFirstChild("RollSpeed")
+        if rollSpeed then rollSpeed.Position = UDim2.new(rollSpeed.Position.X.Scale, rollSpeed.Position.X.Offset, 0, 820) end
+        local auto = rng:FindFirstChild("Auto")
+        if auto then auto.Position = UDim2.new(auto.Position.X.Scale, auto.Position.X.Offset, 0, 820) end
+        local swap = rng:FindFirstChild("Swap")
+        if swap then swap.Visible = false end
+        local warning = rng:FindFirstChild("Warning")
+        if warning then warning.Visible = false end
+    end)
+end
+
+local function startRNG()
+    if rngConnection then return end
+    showRNG()
+    rngConnection = RunService.Stepped:Connect(function()
+        if Settings.RNG then showRNG() end
+    end)
+end
+
+local function stopRNG()
+    if rngConnection then rngConnection:Disconnect(); rngConnection = nil end
+    pcall(function()
+        local player = game.Players.LocalPlayer
+        local pg = player:FindFirstChild("PlayerGui")
+        if not pg then return end
+        local rng = pg:FindFirstChild("RNG")
+        if not rng then return end
+        rng.Enabled = false
+        local roll = rng:FindFirstChild("Roll")
+        if roll then roll.Position = UDim2.new(roll.Position.X.Scale, roll.Position.X.Offset, 0, 923) end
+        local rollSpeed = rng:FindFirstChild("RollSpeed")
+        if rollSpeed then rollSpeed.Position = UDim2.new(rollSpeed.Position.X.Scale, rollSpeed.Position.X.Offset, 0, 923) end
+        local auto = rng:FindFirstChild("Auto")
+        if auto then auto.Position = UDim2.new(auto.Position.X.Scale, auto.Position.X.Offset, 0, 923) end
+        local swap = rng:FindFirstChild("Swap")
+        if swap then swap.Visible = true end
+        local warning = rng:FindFirstChild("Warning")
+        if warning then warning.Visible = true end
+    end)
+end
+
 local walkRunning = false
 local walkThread = nil
 local walkKeys = {}
@@ -853,7 +918,7 @@ local function startWalkMacro()
     if walkRunning then return end
     walkRunning = true
     walkThread = task.spawn(walkLoop)
-    Rayfield:Notify({ Title = "Walking Macro", Content = "Started (WASD + Jump)", Duration = 2 })
+    notifyUser("Walking Macro", "Started (WASD + Jump)", 2)
 end
 
 local function stopWalkMacro()
@@ -861,24 +926,33 @@ local function stopWalkMacro()
     walkRunning = false
     if walkThread then task.cancel(walkThread); walkThread = nil end
     releaseWalkKeys()
-    Rayfield:Notify({ Title = "Walking Macro", Content = "Stopped", Duration = 2 })
+    notifyUser("Walking Macro", "Stopped", 2)
 end
 
-local Window = Rayfield:CreateWindow({ Name="Skibidi Defense Script (Private)", LoadingTitle="Loading...", LoadingSubtitle="Ready", ConfigurationSaving={Enabled=false}, KeySystem=false })
+local Window = Fluent:CreateWindow({
+    Title = "Skibidi Defense Script (Private)",
+    SubTitle = "v2.5",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl,
+    LoadingTitle = "Skibidi Defense Script",
+    LoadingSubtitle = "Loading v2.5..."
+})
 
-updateMenuBlur()
-startMenuBlurWatcher()
+if getgenv then getgenv().SkibidiGUI = Window end
+_G.SkibidiGUI = Window
 
-local MainTab = Window:CreateTab("Main", 120674109076896)
+local MainTab = Window:AddTab({Title = "Main", Icon = "rbxassetid://120674109076896" })
 
-MainTab:CreateSection("Info")
+MainTab:AddSection("Info")
 
 local Players = game:GetService("Players")
 local Stats = game:GetService("Stats")
-local LocalizationService = game:GetService("LocalizationService")
 
 local startTime = tick()
-local infoParagraph = MainTab:CreateParagraph({ Title = "📊 Stats", Content = "Loading..." })
+local infoParagraph = MainTab:AddParagraph({Title = "Stats", Content = "Loading..."})
 
 local fps = 0
 local frames = 0
@@ -896,11 +970,57 @@ end
 
 local function getPingText() return tostring(getPingNumber()) end
 
-local function getPlayerRegion()
-    local success, result = pcall(function() return LocalizationService:GetCountryRegionForPlayerAsync(Players.LocalPlayer) end)
-    if not success or not result then return "Unknown" end
-    local regions = { DE="🇩🇪 Germany", NL="🇳🇱 Netherlands", FR="🇫🇷 France", GB="🇬🇧 United Kingdom", US="🇺🇸 USA", RU="🇷🇺 Russia", PL="🇵🇱 Poland", UA="🇺🇦 Ukraine", TR="🇹🇷 Turkey", ES="🇪🇸 Spain", IT="🇮🇹 Italy", BR="🇧🇷 Brazil", IN="🇮🇳 India", CN="🇨🇳 China", JP="🇯🇵 Japan", KR="🇰🇷 Korea", CA="🇨🇦 Canada", AU="🇦🇺 Australia", MX="🇲🇽 Mexico", ID="🇮🇩 Indonesia", PH="🇵🇭 Philippines", VN="🇻🇳 Vietnam" }
-    return regions[result] or result
+local cachedRegion = nil
+local cachedServerInfo = nil
+
+local function getServerRegion()
+    if cachedRegion then return cachedRegion end
+    local region = "Unknown"
+    local apis = {
+        "https://ipapi.co/json/",
+        "https://ipinfo.io/json",
+        "https://api.ipify.org?format=json"
+    }
+    for _, url in ipairs(apis) do
+        pcall(function()
+            local resp = game:HttpGet(url)
+            if resp and resp ~= "" then
+                local data = HttpService:JSONDecode(resp)
+                if data then
+                    local city = data.city or data.locality or ""
+                    local country = data.country_name or data.country or ""
+                    local ip = data.ip or ""
+                    if city ~= "" and country ~= "" then
+                        region = country .. ", " .. city
+                    elseif country ~= "" then
+                        region = country
+                    elseif ip ~= "" then
+                        region = "IP: " .. ip
+                    end
+                end
+            end
+        end)
+        if region ~= "Unknown" then break end
+    end
+    cachedRegion = region
+    return region
+end
+
+local function getServerInfo()
+    if cachedServerInfo then return cachedServerInfo end
+    local info = "Unknown"
+    pcall(function()
+        local jobId = game.JobId or ""
+        local placeId = game.PlaceId or 0
+        if jobId ~= "" then
+            local shortJob = jobId:sub(1, 8)
+            info = string.format("Place: %d | Server: %s", placeId, shortJob)
+        else
+            info = string.format("Place: %d", placeId)
+        end
+    end)
+    cachedServerInfo = info
+    return info
 end
 
 local function formatTime(sec)
@@ -915,13 +1035,17 @@ task.spawn(function()
         local uptime = tick() - startTime
         local serverTime = os.date("%H:%M:%S")
         local pingText = getPingText()
-        local playerRegion = getPlayerRegion()
-        infoParagraph:Set({ Title = "📊 Stats", Content = string.format("⏱️ UpTime: %s\n🕐 Time: %s\n🌍 Region: %s\n📡 Ping: %sms\n🎮 FPS: %d", formatTime(uptime), serverTime, playerRegion, pingText, fps) })
+        local serverRegion = getServerRegion()
+        local serverInfo = getServerInfo()
+        pcall(function()
+            infoParagraph:SetTitle("📊 Stats")
+            infoParagraph:SetDesc(string.format("⏱️ UpTime: %s\n🕐 Time: %s\n🌍 Region: %s\n🖥️ Server: %s\n📡 Ping: %sms\n🎮 FPS: %d", formatTime(uptime), serverTime, serverRegion, serverInfo, pingText, fps))
+        end)
         task.wait(1)
     end
 end)
 
-MainTab:CreateSection("Lobby")
+MainTab:AddSection("Lobby")
 
 local isOpen = false
 local cachedGUI = nil
@@ -939,11 +1063,39 @@ local function findWarlordSignGUI()
     return cachedGUI
 end
 
-MainTab:CreateButton({ Name = "Warlord Sign Gui", Callback = function() isOpen = not isOpen; for _, gui in ipairs(findWarlordSignGUI()) do gui.Enabled = isOpen end end })
+local WarlordButton = MainTab:AddButton({Title = "Warlord Sign Gui", Callback = function() isOpen = not isOpen; for _, gui in ipairs(findWarlordSignGUI()) do gui.Enabled = isOpen end; notifyUser("Warlord Sign", isOpen and "Enabled" or "Disabled", 2) end })
 
-MainTab:CreateButton({ Name = "Bypass Jeffry", Callback = function() for _, obj in ipairs(game:GetDescendants()) do if obj:IsA("NumberValue") and obj.Name == "THE DARKNESS" then obj:Destroy(); break end end; if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Bypass Jeffry", Content = "THE DARKNESS removed", Duration = 2, Image = 10885652171 }) end end })
+MainTab:AddButton({Title ="Bypass Jeffry", Callback = function() for _, obj in ipairs(game:GetDescendants()) do if obj:IsA("NumberValue") and obj.Name == "THE DARKNESS" then obj:Destroy(); break end end; notifyUser("Bypass Jeffry", "THE DARKNESS removed", 2) end })
 
-local Toggle_ShowAllTowers = MainTab:CreateToggle({ Name = "Show All Towers", CurrentValue = Settings.ShowAllTowers, Callback = function(v) Settings.ShowAllTowers = v; if v then startShowAllTowers(); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Show All Towers", Content = "Enabled - All towers are visible", Duration = 2, Image = 10885652171 }) end else stopShowAllTowers(); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Show All Towers", Content = "Disabled - Towers restored", Duration = 2, Image = 10885652171 }) end end end })
+local Toggle_ShowAllTowers = MainTab:AddToggle("Toggle_ShowAllTowers", {Title = "Show All Towers", Default = Settings.ShowAllTowers, Callback = function(v) Settings.ShowAllTowers = v; if v then startShowAllTowers(); notifyUser("Show All Towers", "Enabled - All towers are visible", 2) else stopShowAllTowers(); notifyUser("Show All Towers", "Disabled - Towers restored", 2) end end })
+
+MainTab:AddSection("Trading Plaza")
+
+MainTab:AddButton({Title ="Teleport in Tower", Callback = function() pcall(function() local hrp = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart"); if hrp then hrp.CFrame = CFrame.new(-2, 465, 433); notifyUser("Teleport", "In Tower", 2) end end) end })
+
+MainTab:AddButton({Title ="Teleport in Yourself Quest", Callback = function() pcall(function() local hrp = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart"); if hrp then hrp.CFrame = CFrame.new(10, 1736, -339); notifyUser("Teleport", "Yourself Quest", 2) end end) end })
+
+local Toggle_BlackMarket = MainTab:AddToggle("BlackMarketToggle", {Title = "Open Black Market", Default = Settings.BlackMarket, Callback = function(v)
+    Settings.BlackMarket = v
+    if v then
+        startBlackMarket()
+        notifyUser("Black Market", "Enabled", 2)
+    else
+        stopBlackMarket()
+        notifyUser("Black Market", "Disabled", 2)
+    end
+end })
+
+local Toggle_RNG = MainTab:AddToggle("RNGToggle", {Title = "Show RNG in Plaza", Default = Settings.RNG, Callback = function(v)
+    Settings.RNG = v
+    if v then
+        startRNG()
+        notifyUser("RNG", "Enabled", 2)
+    else
+        stopRNG()
+        notifyUser("RNG", "Disabled", 2)
+    end
+end })
 
 local function getHRP()
     local c = game.Players.LocalPlayer.Character
@@ -953,7 +1105,7 @@ end
 local camConn = nil
 local lockedCF = nil
 local function getShakeOffset()
-    local offsets = {0.01, 0.02, 0.04, 0.05}
+    local offsets = {0.03, 0.05, 0.08, 0.1, 0.12}
     local x = offsets[math.random(1,#offsets)]
     local y = offsets[math.random(1,#offsets)]
     x = x * (math.random(0,1) == 1 and 1 or -1)
@@ -1004,79 +1156,128 @@ local function stopAntiMacro()
     lockedCF = nil
 end
 
-MainTab:CreateSection("Macro")
+MainTab:AddSection("Macro")
 
-MainTab:CreateParagraph({
-    Title = "Bypass Macros",
-    Content = "Camera Lock + Shake / Walking\nВыбери режимы в списке ниже"
-})
+MainTab:AddParagraph({Title = "Bypass Macros", Content = "Camera Lock + Shake / Walking\nВыбери режимы в списке ниже" })
 
-local Toggle_AntiMacro = MainTab:CreateToggle({ Name = "Camera Lock", CurrentValue = Settings.AntiMacro, Callback = function(v)
+local Toggle_AntiMacro = MainTab:AddToggle("Toggle_AntiMacro", {Title = "Camera Lock", Default = Settings.AntiMacro, Callback = function(v)
     Settings.AntiMacro = v
     if v then
         startAntiMacro()
         if table.find(Settings.MacroModes, "Walking") then startWalkMacro() end
-        Rayfield:Notify({ Title = "Camera Lock", Content = "ON", Duration = 2 })
+        notifyUser("Camera Lock", "ON", 2)
     else
         stopAntiMacro()
         stopWalkMacro()
-        Rayfield:Notify({ Title = "Camera Lock", Content = "OFF", Duration = 2 })
+        notifyUser("Camera Lock", "OFF", 2)
     end
 end })
 
-local macroDropdown = MainTab:CreateDropdown({
-    Name = "Macro Modes",
-    Options = {"Shiking", "Walking"},
-    CurrentOption = Settings.MacroModes,
-    MultipleOptions = true,
+local currentMacroOption = "None"
+if table.find(Settings.MacroModes, "Shiking") and table.find(Settings.MacroModes, "Walking") then
+    currentMacroOption = "Shiking + Walking"
+elseif table.find(Settings.MacroModes, "Shiking") then
+    currentMacroOption = "Shiking"
+elseif table.find(Settings.MacroModes, "Walking") then
+    currentMacroOption = "Walking"
+end
+
+local macroDropdown = MainTab:AddDropdown("MacroModes", {
+    Title = "Macro Modes",
+    Values = {"None", "Shiking", "Walking", "Shiking + Walking"},
+    Default = currentMacroOption,
     Callback = function(opt)
         Settings.MacroModes = {}
-        if typeof(opt) == "table" then
-            for _, v in ipairs(opt) do table.insert(Settings.MacroModes, v) end
-        else
-            table.insert(Settings.MacroModes, opt)
+        if opt == "Shiking" then
+            table.insert(Settings.MacroModes, "Shiking")
+        elseif opt == "Walking" then
+            table.insert(Settings.MacroModes, "Walking")
+        elseif opt == "Shiking + Walking" then
+            table.insert(Settings.MacroModes, "Shiking")
+            table.insert(Settings.MacroModes, "Walking")
         end
-        if not Settings.AntiMacro then
-            Settings.MacroModes = {}
-            macroDropdown:Set({})
-            Rayfield:Notify({ Title = "Macro Modes", Content = "Включи Camera Lock сначала", Duration = 2 })
+        
+        if not Settings.AntiMacro and opt ~= "None" then
+            notifyUser("Macro Modes", "Turn on Camera Lock first!", 2)
             return
         end
+        
         local hasWalking = table.find(Settings.MacroModes, "Walking")
-        local parts = {"Shiking"}
+        local parts = {}
+        if table.find(Settings.MacroModes, "Shiking") then table.insert(parts, "Shiking") end
         if hasWalking then startWalkMacro(); table.insert(parts, "Walking") else stopWalkMacro() end
-        if Settings.NotificationsEnabled then
-            Rayfield:Notify({ Title = "Macro Modes", Content = table.concat(parts, " + "), Duration = 1 })
+        
+        if Settings.NotificationsEnabled and #parts > 0 then
+            notifyUser("Macro Modes", table.concat(parts, " + "), 1)
         end
     end
 })
 
-MainTab:CreateSection("Walk Settings")
-MainTab:CreateSlider({ Name = "Walk Chance (%)", Range = {0, 90}, Increment = 5, CurrentValue = Settings.WalkChance, Callback = function(v) Settings.WalkChance = v end })
-MainTab:CreateSlider({ Name = "Jump Chance (%)", Range = {0, 50}, Increment = 5, CurrentValue = Settings.JumpChance, Callback = function(v) Settings.JumpChance = v end })
-MainTab:CreateSlider({ Name = "Move Min (s)", Range = {0.2, 3}, Increment = 0.2, CurrentValue = Settings.MoveDurationMin, Callback = function(v) Settings.MoveDurationMin = v end })
-MainTab:CreateSlider({ Name = "Move Max (s)", Range = {0.5, 5}, Increment = 0.2, CurrentValue = Settings.MoveDurationMax, Callback = function(v) Settings.MoveDurationMax = v end })
-MainTab:CreateSlider({ Name = "Pause Min (s)", Range = {0, 1}, Increment = 0.05, CurrentValue = Settings.PauseMin, Callback = function(v) Settings.PauseMin = v end })
-MainTab:CreateSlider({ Name = "Pause Max (s)", Range = {0.1, 2}, Increment = 0.05, CurrentValue = Settings.PauseMax, Callback = function(v) Settings.PauseMax = v end })
+MainTab:AddSection("Walk Settings")
+
+local walkPresets = {
+    None = {WalkChance = 0, JumpChance = 0, MoveDurationMin = 0.8, MoveDurationMax = 2.5, PauseMin = 0.05, PauseMax = 0.3},
+    Slow = {WalkChance = 25, JumpChance = 10, MoveDurationMin = 1.5, MoveDurationMax = 3.5, PauseMin = 0.3, PauseMax = 1.0},
+    Medium = {WalkChance = 40, JumpChance = 15, MoveDurationMin = 0.8, MoveDurationMax = 2.5, PauseMin = 0.05, PauseMax = 0.3},
+    Fast = {WalkChance = 60, JumpChance = 25, MoveDurationMin = 0.4, MoveDurationMax = 1.5, PauseMin = 0.02, PauseMax = 0.15},
+    Custom = nil
+}
+
+local walkPresetDropdown = MainTab:AddDropdown("WalkPreset", {
+    Title = "Walk Preset",
+    Values = {"None", "Slow", "Medium", "Fast", "Custom"},
+    Default = "Medium",
+    Callback = function(opt)
+        local preset = walkPresets[opt]
+        if preset then
+            Settings.WalkChance = preset.WalkChance
+            Settings.JumpChance = preset.JumpChance
+            Settings.MoveDurationMin = preset.MoveDurationMin
+            Settings.MoveDurationMax = preset.MoveDurationMax
+            Settings.PauseMin = preset.PauseMin
+            Settings.PauseMax = preset.PauseMax
+            if walkChanceSlider then walkChanceSlider:SetValue(preset.WalkChance) end
+            if jumpChanceSlider then jumpChanceSlider:SetValue(preset.JumpChance) end
+            if moveMinSlider then moveMinSlider:SetValue(preset.MoveDurationMin) end
+            if moveMaxSlider then moveMaxSlider:SetValue(preset.MoveDurationMax) end
+            if pauseMinSlider then pauseMinSlider:SetValue(preset.PauseMin) end
+            if pauseMaxSlider then pauseMaxSlider:SetValue(preset.PauseMax) end
+            notifyUser("Walk Settings", "Preset: " .. opt, 1)
+        end
+    end
+})
+
+MainTab:AddParagraph({Title = "Custom Walk", Content = "Select 'Custom' preset to manually adjust sliders below"})
+
+local walkChanceSlider = MainTab:AddSlider("WalkChance", {Title = "Walk Chance (%)", Min = 0, Max = 90, Rounding = 0, Default = Settings.WalkChance, Callback = function(v) Settings.WalkChance = v end })
+local jumpChanceSlider = MainTab:AddSlider("JumpChance", {Title = "Jump Chance (%)", Min = 0, Max = 50, Rounding = 0, Default = Settings.JumpChance, Callback = function(v) Settings.JumpChance = v end })
+local moveMinSlider = MainTab:AddSlider("MoveMin", {Title = "Move Min (s)", Min = 0.2, Max = 3, Rounding = 1, Default = Settings.MoveDurationMin, Callback = function(v) Settings.MoveDurationMin = v end })
+local moveMaxSlider = MainTab:AddSlider("MoveMax", {Title = "Move Max (s)", Min = 0.5, Max = 5, Rounding = 1, Default = Settings.MoveDurationMax, Callback = function(v) Settings.MoveDurationMax = v end })
+local pauseMinSlider = MainTab:AddSlider("PauseMin", {Title = "Pause Min (s)", Min = 0, Max = 1, Rounding = 2, Default = Settings.PauseMin, Callback = function(v) Settings.PauseMin = v end })
+local pauseMaxSlider = MainTab:AddSlider("PauseMax", {Title = "Pause Max (s)", Min = 0.1, Max = 2, Rounding = 2, Default = Settings.PauseMax, Callback = function(v) Settings.PauseMax = v end })
 
 local savedPosition = nil
 local savedCoordsText = "(None)"
 
-local teleportButton = MainTab:CreateButton({ Name = "Teleport to Position (None)", Callback = function() local hrp = getHRP(); if hrp and savedPosition then hrp.CFrame = savedPosition; if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Teleported", Content = "To " .. savedCoordsText, Duration = 2, Image = 10885652171 }) end else Rayfield:Notify({ Title = "Error", Content = "No saved position", Duration = 2, Image = 10885652171 }) end end })
+local teleportButton = MainTab:AddButton({Title ="Teleport to Position (None)", Callback = function() local hrp = getHRP(); if hrp and savedPosition then hrp.CFrame = savedPosition; notifyUser("Teleported", "To " .. savedCoordsText, 2) else notifyUser("Error", "No saved position", 2) end end })
 
-MainTab:CreateButton({ Name = "Save Position", Callback = function() local hrp = getHRP(); if not hrp then return end; savedPosition = hrp.CFrame; local x, y, z = math.floor(hrp.Position.X), math.floor(hrp.Position.Y), math.floor(hrp.Position.Z); savedCoordsText = string.format("(%d, %d, %d)", x, y, z); teleportButton:Set("Teleport to Position " .. savedCoordsText); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Saved", Content = "Saved at " .. savedCoordsText, Duration = 2, Image = 10885652171 }) end end })
+MainTab:AddButton({Title ="Save Position", Callback = function() local hrp = getHRP(); if not hrp then return end; savedPosition = hrp.CFrame; local x, y, z = math.floor(hrp.Position.X), math.floor(hrp.Position.Y), math.floor(hrp.Position.Z); savedCoordsText = string.format("(%d, %d, %d)", x, y, z); teleportButton:SetTitle("Teleport to Position " .. savedCoordsText); notifyUser("Saved", "Saved at " .. savedCoordsText, 2) end })
 
-MainTab:CreateSection("Teleports")
+MainTab:AddSection("Teleports")
 
-MainTab:CreateButton({ Name = "Lobby", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(14279693118, game.Players.LocalPlayer); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Teleport", Content = "To Lobby", Duration = 2, Image = 10885652171 }) end end) end })
+MainTab:AddButton({Title ="Lobby", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(14279693118, game.Players.LocalPlayer); notifyUser("Teleport", "To Lobby", 2) end) end })
 
-MainTab:CreateButton({ Name = "Trading Plaza", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(18711550363, game.Players.LocalPlayer); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Teleport", Content = "To Trading Plaza", Duration = 2, Image = 10885652171 }) end end) end })
+MainTab:AddButton({Title ="Trading Plaza", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(18711550363, game.Players.LocalPlayer); notifyUser("Teleport", "To Trading Plaza", 2) end) end })
 
-MainTab:CreateButton({ Name = "HappyBirtchDay", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(93311267472350, game.Players.LocalPlayer); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Teleport", Content = "To HappyBirtchDay", Duration = 2, Image = 10885652171 }) end end) end })
+MainTab:AddButton({Title ="HappyBirtchDay", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(93311267472350, game.Players.LocalPlayer); notifyUser("Teleport", "To HappyBirtchDay", 2) end) end })
 
-local OtherTab = Window:CreateTab("Other", 102763551061763)
+local FeaturesTab = Window:AddTab({Title = "Features", Icon = "rbxassetid://4483345998" })
 
-OtherTab:CreateSection("Utilities")
+FeaturesTab:AddParagraph({Title = "Coming Soon", Content = "New features are being developed and will be available in future updates.\n\nStay tuned!"})
+
+local OtherTab = Window:AddTab({Title = "Other", Icon = "rbxassetid://102763551061763" })
+
+OtherTab:AddSection("Utilities")
 
 local originalHoldDurations = {}
 
@@ -1089,18 +1290,18 @@ workspace.DescendantAdded:Connect(function(descendant) task.wait(0.1); if descen
 task.spawn(function() while true do task.wait(0.5); if Settings.InstantProxMount then applyInstantProxMount("set") end end end)
 
 local antiAFKEnabled = Settings.AntiAFK
-local function startAntiAFK() if antiAFKEnabled then return end; antiAFKEnabled = true; Settings.AntiAFK = true; loadstring(game:HttpGet("https://raw.githubusercontent.com/hassanxzayn-lua/Anti-afk/main/antiafkbyhassanxzyn"))(); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Anti AFK", Content = "Enabled", Duration = 2, Image = 10885652171 }) end end
+local function startAntiAFK() if antiAFKEnabled then return end; antiAFKEnabled = true; Settings.AntiAFK = true; loadstring(game:HttpGet("https://raw.githubusercontent.com/hassanxzayn-lua/Anti-afk/main/antiafkbyhassanxzyn"))(); notifyUser("Anti AFK", "Enabled", 2) end
 
-OtherTab:CreateButton({ Name = antiAFKEnabled and "Anti AFK [ON]" or "Anti AFK", Callback = function() if not antiAFKEnabled then startAntiAFK() end end })
+OtherTab:AddButton({Title =antiAFKEnabled and "Anti AFK [ON]" or "Anti AFK", Callback = function() if not antiAFKEnabled then startAntiAFK() end end })
 
-local Toggle_InstantProxMount = OtherTab:CreateToggle({ Name = "Instant ProxMount", CurrentValue = Settings.InstantProxMount, Callback = function(v) Settings.InstantProxMount = v; if v then applyInstantProxMount("set"); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Instant ProxMount", Content = "HoldDuration = 0", Duration = 2 }) end else applyInstantProxMount("restore"); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Instant ProxMount", Content = "Restored", Duration = 2 }) end end end })
+local Toggle_InstantProxMount = OtherTab:AddToggle("Toggle_InstantProxMount", {Title = "Instant ProxMount", Default = Settings.InstantProxMount, Callback = function(v) Settings.InstantProxMount = v; if v then applyInstantProxMount("set"); notifyUser("Instant ProxMount", "HoldDuration = 0", 2) else applyInstantProxMount("restore"); notifyUser("Instant ProxMount", "Restored", 2) end end })
 
 local dexLoaded = false
-local function loadDex() if dexLoaded then return end; dexLoaded = true; task.spawn(xpcall, assert(loadstring(game:HttpGet('https://raw.githubusercontent.com/Diffone7/r/refs/heads/main/tsb/dex')), warn)); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Dex", Content = "Loaded!", Duration = 2, Image = 10885652171 }) end end
+local function loadDex() if dexLoaded then return end; dexLoaded = true; task.spawn(xpcall, assert(loadstring(game:HttpGet('https://raw.githubusercontent.com/Diffone7/r/refs/heads/main/tsb/dex')), warn)); notifyUser("Dex", "Loaded!", 2) end
 
-OtherTab:CreateButton({ Name = "Dex Explorer", Callback = function() if not dexLoaded then loadDex() end end })
-OtherTab:CreateButton({ Name = "Rejoin", Callback = function() game:GetService("TeleportService"):Teleport(game.PlaceId, game.Players.LocalPlayer) end })
-OtherTab:CreateButton({ Name = "Infinite Yield", Callback = function() loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))() end })
+OtherTab:AddButton({Title ="Dex Explorer", Callback = function() if not dexLoaded then loadDex() end end })
+OtherTab:AddButton({Title ="Rejoin", Callback = function() notifyUser("Rejoin", "Rejoining server...", 2); task.wait(1); game:GetService("TeleportService"):Teleport(game.PlaceId, game.Players.LocalPlayer) end })
+OtherTab:AddButton({Title ="Infinite Yield", Callback = function() loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))(); notifyUser("Infinite Yield", "Loaded!", 2) end })
 
 local serverHopActive = false
 local serverHopConnection = nil
@@ -1139,7 +1340,7 @@ local function loadServerHopUI()
     if serverHopActive then
         destroyServerHopUI()
         serverHopActive = false
-        if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Server Hop UI", Content = "Closed", Duration = 2, Image = 10885652171 }) end
+        notifyUser("Server Hop UI", "Closed", 2)
         return
     end
     destroyServerHopUI()
@@ -1152,14 +1353,14 @@ local function loadServerHopUI()
         end)
         if not success then
             serverHopActive = false
-            if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Server Hop UI", Content = "Failed to load: " .. tostring(err), Duration = 3, Image = 10885652171 }) end
+            notifyUser("Server Hop UI", "Failed to load: " .. tostring(err), 3)
         else
-            if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Server Hop UI", Content = "Loaded! Press again to close", Duration = 2, Image = 10885652171 }) end
+            notifyUser("Server Hop UI", "Loaded! Press again to close", 2)
         end
     end)
 end
 
-OtherTab:CreateButton({ Name = "Server Hop UI", Callback = function() loadServerHopUI() end })
+OtherTab:AddButton({Title ="Server Hop UI", Callback = function() loadServerHopUI() end })
 
 local infCamEnabled = false
 local oldMinZoom = nil
@@ -1179,49 +1380,65 @@ local function toggleInfCamera(v)
     end
 end
 
-OtherTab:CreateToggle({ Name = "Inf Camera Distance", CurrentValue = false, Callback = function(v) infCamEnabled = v; toggleInfCamera(v); if Settings.NotificationsEnabled then Rayfield:Notify({ Title = "Camera Distance", Content = v and "Infinite Enabled" or "Restored", Duration = 2, Image = 10885652171 }) end end })
+OtherTab:AddToggle("InfCamera", {Title = "Inf Camera Distance", Default = false, Callback = function(v) infCamEnabled = v; toggleInfCamera(v); notifyUser("Camera Distance", v and "Infinite Enabled" or "Restored", 2) end })
 
-OtherTab:CreateSection("Settings")
+OtherTab:AddSection("Settings")
 
-local Toggle_BlurEnabled = OtherTab:CreateToggle({ Name = "Blur", CurrentValue = Settings.BlurEnabled, Callback = function(v) Settings.BlurEnabled = v; updateMenuBlur() end })
-local Toggle_NotificationsEnabled = OtherTab:CreateToggle({ Name = "Show Notifications", CurrentValue = Settings.NotificationsEnabled, Callback = function(v) Settings.NotificationsEnabled = v end })
+local Toggle_NotificationsEnabled = OtherTab:AddToggle("Toggle_NotificationsEnabled", {Title = "Show Notifications", Default = Settings.NotificationsEnabled, Callback = function(v) Settings.NotificationsEnabled = v; notifyUser("Notifications", v and "Enabled" or "Disabled", 2) end })
 
-OtherTab:CreateSection("Info")
-OtherTab:CreateParagraph({ Title = "Script Info", Content = "Skibidi Defense Script\nVersion 2.4\nCamera Lock + Shiking + Walking\nMatch Tracker" })
 
-local VisualTab = Window:CreateTab("Visual", 10885652171)
 
-VisualTab:CreateSection("Potato Graphics")
-VisualTab:CreateParagraph({ Title = "Potato Graphics Mode", Content = "Maximum FPS Boost for low-end PCs\n\n• Disables shadows\n• Removes particles, trails & beams\n• Turns all materials to Plastic\n• Disables water effects\n• Disables bloom & post-processing" })
-local Toggle_PotatoGraphics = VisualTab:CreateToggle({ Name = "Potato Graphics Mode", CurrentValue = Settings.PotatoGraphics, Callback = function(v) togglePotatoGraphics(v) end })
+local VisualTab = Window:AddTab({Title = "Visual", Icon = "rbxassetid://10885652171" })
 
-VisualTab:CreateSection("Game")
-VisualTab:CreateInput({ Name = "Enter Speed", PlaceholderText = "0.1 - 10", RemoveTextAfterFocusLost = true, Callback = function(Text) local speed = tonumber(Text); if speed then if speed < 0.1 then speed = 0.1 end; if speed > 10 then speed = 10 end; Settings.GameSpeed = speed; setGameSpeed(speed) else Rayfield:Notify({ Title = "Game Speed", Content = "Invalid! Use 0.1 - 10", Duration = 2, Image = 10885652171 }) end end })
-VisualTab:CreateButton({ Name = "Reset Game Speed (1x)", Callback = function() Settings.GameSpeed = 1; setGameSpeed(1) end })
+VisualTab:AddSection("Potato Graphics")
+VisualTab:AddParagraph({Title = "Potato Graphics Mode", Content = "Maximum FPS Boost for low-end PCs\n\n• Disables shadows\n• Removes particles, trails & beams\n• Turns all materials to Plastic\n• Disables water effects\n• Disables bloom & post-processing" })
+local Toggle_PotatoGraphics = VisualTab:AddToggle("Toggle_PotatoGraphics", {Title = "Potato Graphics Mode", Default = Settings.PotatoGraphics, Callback = function(v) togglePotatoGraphics(v) end })
 
-VisualTab:CreateSection("Tower Boosts")
-VisualTab:CreateDropdown({ Name = "Boost Type", Options = {"DMG", "CASH", "COST", "HD", "RNG", "SKIP", "SPA"}, CurrentOption = {Settings.SelectedBoostType}, MultipleOptions = false, Callback = function(opt) local selectedBoost = opt; if type(opt) == "table" then selectedBoost = opt[1] or "DMG" end; Settings.SelectedBoostType = selectedBoost; Rayfield:Notify({ Title = "Tower Boosts", Content = "Selected: " .. selectedBoost, Duration = 1, Image = 10885652171 }) end })
-VisualTab:CreateInput({ Name = "Boost Value", PlaceholderText = "Enter value (or inf)", RemoveTextAfterFocusLost = true, Callback = function(Text) local value; if string.lower(Text) == "inf" then value = math.huge else value = tonumber(Text) end; if value then applyBoostSafe(Settings.SelectedBoostType, value) else Rayfield:Notify({ Title = "Tower Boosts", Content = "Invalid number! Use 0-999 or inf", Duration = 2, Image = 10885652171 }) end end })
-VisualTab:CreateButton({ Name = "Reset All Tower Boosts", Callback = function() resetBoosts() end })
+VisualTab:AddSection("Game")
+VisualTab:AddInput("GameSpeed", {Title = "Enter Speed", Placeholder = "0.1 - 10", Default = tostring(Settings.GameSpeed), Callback = function(Text) local speed = tonumber(Text); if speed then if speed < 0.1 then speed = 0.1 end; if speed > 10 then speed = 10 end; Settings.GameSpeed = speed; setGameSpeed(speed) else notifyUser("Game Speed", "Invalid! Use 0.1 - 10", 2) end end })
+VisualTab:AddButton({Title ="Reset Game Speed (1x)", Callback = function() Settings.GameSpeed = 1; setGameSpeed(1) end })
 
-local WebhookTab = Window:CreateTab("WebHook", 12465540157)
+VisualTab:AddSection("Tower Boosts")
+VisualTab:AddDropdown("BoostType", {Title = "Boost Type", Values = {"DMG", "CASH", "COST", "HD", "RNG", "SKIP", "SPA"}, Default = Settings.SelectedBoostType, Callback = function(opt) Settings.SelectedBoostType = opt; notifyUser("Tower Boosts", "Selected: " .. opt, 1) end })
+VisualTab:AddInput("BoostValue", {Title = "Boost Value", Placeholder = "Enter value (or inf)", Default = "", Callback = function(Text) local value; if string.lower(Text) == "inf" then value = math.huge else value = tonumber(Text) end; if value then applyBoostSafe(Settings.SelectedBoostType, value) else notifyUser("Tower Boosts", "Invalid number! Use 0-999 or inf", 2) end end })
+VisualTab:AddButton({Title ="Reset All Tower Boosts", Callback = function() resetBoosts() end })
 
-WebhookTab:CreateSection("Webhook Settings")
-local Toggle_WebhookEnabled = WebhookTab:CreateToggle({ Name = "Enable Webhook", CurrentValue = Settings.WebhookEnabled, Callback = function(v) Settings.WebhookEnabled = v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
-WebhookTab:CreateInput({ Name = "Webhook URL", PlaceholderText = "https://discord.com/api/webhooks/...", RemoveTextAfterFocusLost = false, Callback = function(Text) Settings.WebhookURL = Text; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+local WebhookTab = Window:AddTab({Title = "WebHook", Icon = "rbxassetid://12465540157" })
 
-WebhookTab:CreateSection("Match Tracker Settings")
-WebhookTab:CreateToggle({ Name = "Track Matches (Win/Loss)", CurrentValue = false, Callback = function(v) Settings.WebhookMatchTracking = v; if v then startMatchTracking() else stopMatchTracking() end; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
-WebhookTab:CreateToggle({ Name = "Show Log in Webhook", CurrentValue = true, Callback = function(v) Settings.ShowLogInWebhook = v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+WebhookTab:AddSection("Webhook Settings")
+local Toggle_WebhookEnabled = WebhookTab:AddToggle("Toggle_WebhookEnabled", {Title = "Enable Webhook", Default = Settings.WebhookEnabled, Callback = function(v) Settings.WebhookEnabled = v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+WebhookTab:AddInput("WebhookURL", {Title = "Webhook URL", Placeholder = "https://discord.com/api/webhooks/...", Default = Settings.WebhookURL, Callback = function(Text) Settings.WebhookURL = Text; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 
-WebhookTab:CreateSection("Display Fields")
-local matchFieldsText = WebhookTab:CreateParagraph({ Title = "Selected Fields", Content = table.concat(Settings.WebhookMatchFields, ", ") })
-local function updateMatchFieldsText() matchFieldsText:Set({ Title = "Selected Fields", Content = #Settings.WebhookMatchFields > 0 and table.concat(Settings.WebhookMatchFields, ", ") or "None" }); Settings.WebhookMatchFields = Settings.WebhookMatchFields; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end
-WebhookTab:CreateDropdown({ Name = "Fields to Display", Options = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}, CurrentOption = Settings.WebhookMatchFields, MultipleOptions = true, Callback = function(opt) Settings.WebhookMatchFields = {}; if typeof(opt) == "table" then for _, v in ipairs(opt) do table.insert(Settings.WebhookMatchFields, v) end else table.insert(Settings.WebhookMatchFields, opt) end; updateMatchFieldsText() end })
+WebhookTab:AddSection("Match Tracker Settings")
+WebhookTab:AddToggle("WebhookMatchTracking", {Title = "Track Matches (Win/Loss)", Default = false, Callback = function(v) Settings.WebhookMatchTracking = v; if v then startMatchTracking() else stopMatchTracking() end; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+WebhookTab:AddToggle("ShowLogInWebhook", {Title = "Show Log in Webhook", Default = true, Callback = function(v) Settings.ShowLogInWebhook = v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 
-WebhookTab:CreateButton({ Name = "Reset Win Streak & Total Credits", Callback = function() winStreak = 0; totalCredits = 0; Rayfield:Notify({ Title = "Reset", Content = "Reset to 0", Duration = 2 }) end })
+WebhookTab:AddSection("Display Fields")
+local matchFieldsText = WebhookTab:AddParagraph({Title = "Selected Fields", Content = table.concat(Settings.WebhookMatchFields, ", ") })
+local function updateMatchFieldsText() pcall(function() matchFieldsText:SetDesc(#Settings.WebhookMatchFields > 0 and table.concat(Settings.WebhookMatchFields, ", ") or "None") end); Settings.WebhookMatchFields = Settings.WebhookMatchFields; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end
 
-WebhookTab:CreateButton({ Name = "Test Webhook", Callback = function()
+local fieldsList = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
+local fieldToggles = {}
+for _, field in ipairs(fieldsList) do
+    local isDefaultOn = table.find(Settings.WebhookMatchFields, field) ~= nil
+    fieldToggles[field] = WebhookTab:AddToggle("Show_"..field, {
+        Title = "Show " .. field,
+        Default = isDefaultOn,
+        Callback = function(v)
+            local idx = table.find(Settings.WebhookMatchFields, field)
+            if v and not idx then
+                table.insert(Settings.WebhookMatchFields, field)
+            elseif not v and idx then
+                table.remove(Settings.WebhookMatchFields, idx)
+            end
+            updateMatchFieldsText()
+        end
+    })
+end
+
+WebhookTab:AddButton({Title ="Reset Win Streak & Total Credits", Callback = function() winStreak = 0; totalCredits = 0; notifyUser("Reset", "Reset to 0", 2) end })
+
+WebhookTab:AddButton({Title ="Test Webhook", Callback = function()
     if Settings.WebhookEnabled and Settings.WebhookURL ~= "" then
         local testFields = {}
         for _, field in ipairs(Settings.WebhookMatchFields) do
@@ -1250,25 +1467,33 @@ WebhookTab:CreateButton({ Name = "Test Webhook", Callback = function()
             end
         end
         sendMatchWebhook(testFields)
-        Rayfield:Notify({ Title = "Webhook Test", Content = "Test message sent!", Duration = 2 })
+        notifyUser("Webhook Test", "Test message sent!", 2)
     else
-        Rayfield:Notify({ Title = "Webhook Test", Content = "Enable webhook and set URL first!", Duration = 3 })
+        notifyUser("Webhook Test", "Enable webhook and set URL first!", 3)
     end
 end })
 
-local UpdateTab = Window:CreateTab("Update Log", 15567843390)
-UpdateTab:CreateSection("📌 Version")
-UpdateTab:CreateParagraph({ Title = "Version", Content = "2.4" })
-UpdateTab:CreateSection("📅 Update Date")
-UpdateTab:CreateParagraph({ Title = "Update Date", Content = "12.05.2026" })
-UpdateTab:CreateSection("🆕 What's New")
-UpdateTab:CreateParagraph({ Title = "What's New v2.4", Content = "✅ Multi-select макро: Shiking + Walking\n✅ Camera Lock отдельно\n✅ Настраиваемые шансы и паузы" })
-UpdateTab:CreateSection("📝 Changelog")
-UpdateTab:CreateParagraph({ Title = "Changelog", Content = [[
+local UpdateTab = Window:AddTab({Title = "Update Log", Icon = "rbxassetid://15567843390" })
+UpdateTab:AddSection("Version")
+UpdateTab:AddParagraph({Title = "Version", Content = "2.5" })
+UpdateTab:AddSection("Update Date")
+UpdateTab:AddParagraph({Title = "Update Date", Content = "19.06.2026" })
+UpdateTab:AddSection("What's New")
+UpdateTab:AddParagraph({Title = "What's New v2.5", Content = "Walk Settings presets (None/Slow/Medium/Fast/Custom)\nAnti-duplicate GUI protection\nServer region with city\nSafe module loading\nAll functions have notifications" })
+UpdateTab:AddSection("Changelog")
+UpdateTab:AddParagraph({Title = "Changelog", Content = [[
+v2.5 (19.06.2026)
+- Walk Settings presets dropdown
+- Anti-duplicate GUI protection
+- Server region with city name
+- Safe bypassed module loading
+- All functions have notifications
+- Removed print statements
+
 v2.4 (12.05.2026)
 - Multi-select dropdown: Shiking + Walking
-- Camera Lock отдельный тогл
-- Walking (WASD + Jump) с настройками
+- Camera Lock separate toggle
+- Walking (WASD + Jump) with settings
 
 v2.3 (11.05.2026)
 - Added Bypass Macros (Patched)
@@ -1290,7 +1515,6 @@ v2.0
 - Added Show All Towers
 ]] })
 
-local HttpService = game:GetService("HttpService")
 local CONFIG_FOLDER = "SkibidiConfigs"
 local LAST_CONFIG_FILE = CONFIG_FOLDER.."/last.txt"
 if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
@@ -1300,29 +1524,54 @@ Settings.AutoLoadEnabled = true
 
 local function loadDefault()
     Settings.ShowAllTowers = false
+    Settings.BlackMarket = false
+    Settings.RNG = false
     Settings.AntiMacro = false
     Settings.AntiAFK = false
     Settings.NotificationsEnabled = true
-    Settings.BlurEnabled = false
     Settings.InstantProxMount = false
     Settings.PotatoGraphics = false
+    Settings.GameSpeed = 1
+    Settings.SelectedBoostType = "DMG"
     Settings.WebhookEnabled = false
     Settings.WebhookURL = ""
     Settings.WebhookMatchTracking = false
     Settings.ShowLogInWebhook = true
     Settings.WebhookMatchFields = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
     Settings.MacroModes = {}
-    Toggle_BlurEnabled:Set(Settings.BlurEnabled)
-    Toggle_InstantProxMount:Set(Settings.InstantProxMount)
-    Toggle_AntiMacro:Set(Settings.AntiMacro)
-    Toggle_WebhookEnabled:Set(Settings.WebhookEnabled)
-    if macroDropdown then macroDropdown:Set({}) end
-    updateMenuBlur()
+    Settings.WalkChance = 40
+    Settings.JumpChance = 15
+    Settings.MoveDurationMin = 0.8
+    Settings.MoveDurationMax = 2.5
+    Settings.PauseMin = 0.05
+    Settings.PauseMax = 0.3
+    
+    pcall(function() Toggle_InstantProxMount:SetValue(Settings.InstantProxMount) end)
+    pcall(function() Toggle_AntiMacro:SetValue(Settings.AntiMacro) end)
+    pcall(function() Toggle_WebhookEnabled:SetValue(Settings.WebhookEnabled) end)
+    pcall(function() Toggle_ShowAllTowers:SetValue(Settings.ShowAllTowers) end)
+    pcall(function() Toggle_BlackMarket:SetValue(Settings.BlackMarket) end)
+    pcall(function() Toggle_RNG:SetValue(Settings.RNG) end)
+    pcall(function() Toggle_NotificationsEnabled:SetValue(Settings.NotificationsEnabled) end)
+    pcall(function() Toggle_PotatoGraphics:SetValue(Settings.PotatoGraphics) end)
+    pcall(function() if macroDropdown then macroDropdown:SetValue("None") end end)
+    pcall(function() if walkPresetDropdown then walkPresetDropdown:SetValue("Medium") end end)
+    pcall(function() if walkChanceSlider then walkChanceSlider:SetValue(Settings.WalkChance) end end)
+    pcall(function() if jumpChanceSlider then jumpChanceSlider:SetValue(Settings.JumpChance) end end)
+    pcall(function() if moveMinSlider then moveMinSlider:SetValue(Settings.MoveDurationMin) end end)
+    pcall(function() if moveMaxSlider then moveMaxSlider:SetValue(Settings.MoveDurationMax) end end)
+    pcall(function() if pauseMinSlider then pauseMinSlider:SetValue(Settings.PauseMin) end end)
+    pcall(function() if pauseMaxSlider then pauseMaxSlider:SetValue(Settings.PauseMax) end end)
     applyInstantProxMount("restore")
     savedPosition = nil
     savedCoordsText = "(None)"
-    teleportButton:Set("Teleport to Position (None)")
+    setButtonText(teleportButton, "Teleport to Position (None)")
     updateMatchFieldsText()
+    for _, field in ipairs(fieldsList) do
+        if fieldToggles[field] then
+            fieldToggles[field]:SetValue(true)
+        end
+    end
 end
 
 local function saveConfig(name)
@@ -1330,18 +1579,27 @@ local function saveConfig(name)
     local hrp = getHRP()
     local data = {
         ShowAllTowers = Settings.ShowAllTowers,
+        BlackMarket = Settings.BlackMarket,
+        RNG = Settings.RNG,
         AntiMacro = Settings.AntiMacro,
         AntiAFK = Settings.AntiAFK,
         NotificationsEnabled = Settings.NotificationsEnabled,
-        BlurEnabled = Settings.BlurEnabled,
         InstantProxMount = Settings.InstantProxMount,
         PotatoGraphics = Settings.PotatoGraphics,
+        GameSpeed = Settings.GameSpeed,
+        SelectedBoostType = Settings.SelectedBoostType,
         WebhookEnabled = Settings.WebhookEnabled,
         WebhookURL = Settings.WebhookURL,
         WebhookMatchTracking = Settings.WebhookMatchTracking,
         ShowLogInWebhook = Settings.ShowLogInWebhook,
         WebhookMatchFields = Settings.WebhookMatchFields,
         MacroModes = Settings.MacroModes,
+        WalkChance = Settings.WalkChance,
+        JumpChance = Settings.JumpChance,
+        MoveDurationMin = Settings.MoveDurationMin,
+        MoveDurationMax = Settings.MoveDurationMax,
+        PauseMin = Settings.PauseMin,
+        PauseMax = Settings.PauseMax,
         SavedPosition = hrp and { X = hrp.Position.X, Y = hrp.Position.Y, Z = hrp.Position.Z } or nil
     }
     writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
@@ -1351,75 +1609,132 @@ local function loadConfig(name)
     if name == "default" then loadDefault(); return end
     local path = CONFIG_FOLDER.."/"..name..".json"
     if not isfile(path) then return end
-    local data = HttpService:JSONDecode(readfile(path))
-    Settings.ShowAllTowers = data.ShowAllTowers
-    Settings.AntiMacro = data.AntiMacro
-    Settings.AntiAFK = data.AntiAFK
-    Settings.NotificationsEnabled = data.NotificationsEnabled
-    Settings.BlurEnabled = data.BlurEnabled or false
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
+    if not ok or not data then notifyUser("Config", "Failed to load config: " .. name, 3); return end
+    Settings.ShowAllTowers = data.ShowAllTowers or false
+    Settings.BlackMarket = data.BlackMarket or false
+    Settings.RNG = data.RNG or false
+    Settings.AntiMacro = data.AntiMacro or false
+    Settings.AntiAFK = data.AntiAFK or false
+    Settings.NotificationsEnabled = data.NotificationsEnabled ~= false
     Settings.InstantProxMount = data.InstantProxMount or false
-    Settings.PotatoGraphics = data.PotatoGraphics
+    Settings.PotatoGraphics = data.PotatoGraphics or false
+    Settings.GameSpeed = data.GameSpeed or 1
+    Settings.SelectedBoostType = data.SelectedBoostType or "DMG"
     Settings.WebhookEnabled = data.WebhookEnabled or false
     Settings.WebhookURL = data.WebhookURL or ""
     Settings.WebhookMatchTracking = data.WebhookMatchTracking or false
-    Settings.ShowLogInWebhook = data.ShowLogInWebhook or true
+    Settings.ShowLogInWebhook = data.ShowLogInWebhook ~= false
     Settings.WebhookMatchFields = data.WebhookMatchFields or {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
-    Settings.MacroModes = data.MacroModes or {"Walking"}
+    Settings.MacroModes = data.MacroModes or {}
+    Settings.WalkChance = data.WalkChance or 40
+    Settings.JumpChance = data.JumpChance or 15
+    Settings.MoveDurationMin = data.MoveDurationMin or 0.8
+    Settings.MoveDurationMax = data.MoveDurationMax or 2.5
+    Settings.PauseMin = data.PauseMin or 0.05
+    Settings.PauseMax = data.PauseMax or 0.3
 
-    Toggle_ShowAllTowers:Set(Settings.ShowAllTowers)
-    Toggle_AntiMacro:Set(Settings.AntiMacro)
-    Toggle_NotificationsEnabled:Set(Settings.NotificationsEnabled)
-    Toggle_BlurEnabled:Set(Settings.BlurEnabled)
-    Toggle_InstantProxMount:Set(Settings.InstantProxMount)
-    Toggle_PotatoGraphics:Set(Settings.PotatoGraphics)
-    Toggle_WebhookEnabled:Set(Settings.WebhookEnabled)
-    if macroDropdown then macroDropdown:Set(Settings.MacroModes) end
+    pcall(function() Toggle_ShowAllTowers:SetValue(Settings.ShowAllTowers) end)
+    pcall(function() Toggle_BlackMarket:SetValue(Settings.BlackMarket) end)
+    pcall(function() Toggle_RNG:SetValue(Settings.RNG) end)
+    pcall(function() Toggle_AntiMacro:SetValue(Settings.AntiMacro) end)
+    pcall(function() Toggle_NotificationsEnabled:SetValue(Settings.NotificationsEnabled) end)
+    pcall(function() Toggle_InstantProxMount:SetValue(Settings.InstantProxMount) end)
+    pcall(function() Toggle_PotatoGraphics:SetValue(Settings.PotatoGraphics) end)
+    pcall(function() Toggle_WebhookEnabled:SetValue(Settings.WebhookEnabled) end)
     
-    updateMenuBlur()
-    if Settings.InstantProxMount then applyInstantProxMount("set") else applyInstantProxMount("restore") end
-    stopShowAllTowers(); if Settings.ShowAllTowers then startShowAllTowers() end
-    if Settings.AntiAFK then startAntiAFK() end
-    if Settings.PotatoGraphics then enablePotatoGraphics() else disablePotatoGraphics() end
-    if Settings.WebhookMatchTracking then startMatchTracking() else stopMatchTracking() end
+    pcall(function()
+    if macroDropdown then
+        local opt = "None"
+        if table.find(Settings.MacroModes, "Shiking") and table.find(Settings.MacroModes, "Walking") then
+            opt = "Shiking + Walking"
+        elseif table.find(Settings.MacroModes, "Shiking") then
+            opt = "Shiking"
+        elseif table.find(Settings.MacroModes, "Walking") then
+            opt = "Walking"
+        end
+        macroDropdown:SetValue(opt)
+    end
+    end)
     
+    pcall(function()
+    if walkPresetDropdown then
+        local preset = "Custom"
+        if Settings.WalkChance == 40 and Settings.JumpChance == 15 then preset = "Medium"
+        elseif Settings.WalkChance == 70 and Settings.JumpChance == 5 then preset = "Slow"
+        elseif Settings.WalkChance == 20 and Settings.JumpChance == 30 then preset = "Fast"
+        end
+        walkPresetDropdown:SetValue(preset)
+    end
+    end)
+    pcall(function() if walkChanceSlider then walkChanceSlider:SetValue(Settings.WalkChance) end end)
+    pcall(function() if jumpChanceSlider then jumpChanceSlider:SetValue(Settings.JumpChance) end end)
+    pcall(function() if moveMinSlider then moveMinSlider:SetValue(Settings.MoveDurationMin) end end)
+    pcall(function() if moveMaxSlider then moveMaxSlider:SetValue(Settings.MoveDurationMax) end end)
+    pcall(function() if pauseMinSlider then pauseMinSlider:SetValue(Settings.PauseMin) end end)
+    pcall(function() if pauseMaxSlider then pauseMaxSlider:SetValue(Settings.PauseMax) end end)
+    
+    pcall(function() if Settings.InstantProxMount then applyInstantProxMount("set") else applyInstantProxMount("restore") end end)
+    pcall(function() stopShowAllTowers(); if Settings.ShowAllTowers then startShowAllTowers() end end)
+    pcall(function() if Settings.BlackMarket then startBlackMarket() else stopBlackMarket() end end)
+    pcall(function() if Settings.RNG then startRNG() else stopRNG() end end)
+    pcall(function() if Settings.AntiAFK then startAntiAFK() end end)
+    pcall(function() if Settings.PotatoGraphics then enablePotatoGraphics() else disablePotatoGraphics() end end)
+    pcall(function() if Settings.WebhookMatchTracking then startMatchTracking() else stopMatchTracking() end end)
+    pcall(function() if SpeedSlider then SpeedSlider:SetValue(Settings.GameSpeed) end end)
+    
+    pcall(function()
     updateMatchFieldsText()
+    for _, field in ipairs(fieldsList) do
+        if fieldToggles[field] then
+            fieldToggles[field]:SetValue(table.find(Settings.WebhookMatchFields, field) ~= nil)
+        end
+    end
+    end)
     
     if data.SavedPosition then
         savedPosition = CFrame.new(data.SavedPosition.X, data.SavedPosition.Y, data.SavedPosition.Z)
         local x,y,z = math.floor(data.SavedPosition.X), math.floor(data.SavedPosition.Y), math.floor(data.SavedPosition.Z)
-        teleportButton:Set("Teleport to Position ("..x..","..y..","..z..")")
+        pcall(function() setButtonText(teleportButton, "Teleport to Position ("..x..","..y..","..z..")") end)
     else
         savedPosition = nil
-        teleportButton:Set("Teleport to Position (None)")
+        pcall(function() setButtonText(teleportButton, "Teleport to Position (None)") end)
     end
 end
 
 local function AutoSave() if not Settings.AutoSaveEnabled then return end; if currentConfig ~= "default" then saveConfig(currentConfig); writefile(LAST_CONFIG_FILE, currentConfig) end end
 local function AutoLoad() if not Settings.AutoLoadEnabled then return end; if isfile(LAST_CONFIG_FILE) then local last = readfile(LAST_CONFIG_FILE); if last and last ~= "" then currentConfig = last; loadConfig(last); return end end; currentConfig = "default"; loadConfig("default") end
 
-local ConfigTab = Window:CreateTab("Config", 11956055886)
-local selectedLabel = ConfigTab:CreateParagraph({ Title = "Selected Config", Content = "default" })
-local function updateSelected() selectedLabel:Set({ Title = "Selected Config", Content = currentConfig }) end
-local configDropdown = ConfigTab:CreateDropdown({ Name = "Configs", Options = {"default"}, CurrentOption = {"default"}, Callback = function(opt) currentConfig = type(opt)=="table" and opt[1] or opt; updateSelected(); loadConfig(currentConfig) end })
+local ConfigTab = Window:AddTab({Title = "Config", Icon = "rbxassetid://11956055886" })
+local selectedLabel = ConfigTab:AddParagraph({Title = "Selected Config", Content = "default" })
+local function updateSelected() pcall(function() selectedLabel:SetDesc(currentConfig) end) end
+
+local configDropdown = ConfigTab:AddDropdown("Configs", {
+    Title = "Configs",
+    Values = {"default"},
+    Default = "default",
+    Callback = function(opt) currentConfig = opt; updateSelected(); loadConfig(currentConfig) end 
+})
+
 local function refreshDropdown()
     local map = { ["default"] = true }
     local ok, files = pcall(function() return listfiles(CONFIG_FOLDER) end)
     if ok and files then for _, file in ipairs(files) do local name = tostring(file):match("([^\\/]+)%.json$"); if name then map[name] = true end end end
     local list = {}; for name,_ in pairs(map) do table.insert(list, name) end
     table.sort(list, function(a,b) if a=="default" then return true end; if b=="default" then return false end; return a<b end)
-    configDropdown:Refresh(list)
-    if currentConfig then configDropdown:Set(currentConfig) end
+    configDropdown:SetValues(list)
+    if currentConfig then configDropdown:SetValue(currentConfig) end
 end
 refreshDropdown()
 
 local inputName = ""
-ConfigTab:CreateInput({ Name = "Config Name", PlaceholderText = "Enter name...", Callback = function(text) inputName = text end })
-ConfigTab:CreateButton({ Name = "Create", Callback = function() if inputName=="" or inputName=="default" then return end; currentConfig = inputName; if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then saveConfig(inputName) end; refreshDropdown(); updateSelected() end })
-ConfigTab:CreateButton({ Name = "Save", Callback = function() if not currentConfig then return end; saveConfig(currentConfig); AutoSave(); refreshDropdown() end })
-ConfigTab:CreateButton({ Name = "Load", Callback = function() if not currentConfig then return end; loadConfig(currentConfig) end })
-ConfigTab:CreateButton({ Name = "Delete", Callback = function() if currentConfig=="default" then return end; local path = CONFIG_FOLDER.."/"..currentConfig..".json"; if isfile(path) then delfile(path) end; currentConfig="default"; loadDefault(); refreshDropdown(); updateSelected() end })
-ConfigTab:CreateToggle({ Name = "Auto Load", CurrentValue = Settings.AutoLoadEnabled, Callback = function(v) Settings.AutoLoadEnabled=v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
-ConfigTab:CreateToggle({ Name = "Auto Save", CurrentValue = Settings.AutoSaveEnabled, Callback = function(v) Settings.AutoSaveEnabled=v; if v and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+ConfigTab:AddInput("ConfigName", {Title = "Config Name", Placeholder = "Enter name...", Default = "", Callback = function(text) inputName = text end })
+ConfigTab:AddButton({Title ="Create", Callback = function() if inputName=="" or inputName=="default" then return end; currentConfig = inputName; if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then saveConfig(inputName) end; refreshDropdown(); updateSelected() end })
+ConfigTab:AddButton({Title ="Save", Callback = function() if not currentConfig then return end; saveConfig(currentConfig); AutoSave(); refreshDropdown() end })
+ConfigTab:AddButton({Title ="Load", Callback = function() if not currentConfig then return end; loadConfig(currentConfig) end })
+ConfigTab:AddButton({Title ="Delete", Callback = function() if currentConfig=="default" then return end; local path = CONFIG_FOLDER.."/"..currentConfig..".json"; if isfile(path) then delfile(path) end; currentConfig="default"; loadDefault(); refreshDropdown(); updateSelected() end })
+ConfigTab:AddToggle("AutoLoad", {Title = "Auto Load", Default = Settings.AutoLoadEnabled, Callback = function(v) Settings.AutoLoadEnabled=v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+ConfigTab:AddToggle("AutoSave", {Title = "Auto Save", Default = Settings.AutoSaveEnabled, Callback = function(v) Settings.AutoSaveEnabled=v; if v and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 
 task.spawn(function()
     task.wait(1)
@@ -1428,7 +1743,6 @@ task.spawn(function()
 end)
 task.spawn(function() while true do task.wait(20); AutoSave() end end)
 
-print("✅ Skibidi Defense Script v2.4 Loaded!")
-print("📌 Camera Lock - отдельный тогл")
-print("📌 Shiking + Walking - мультиселект")
-print("📌 Match Tracker - вкладка WebHook")
+notifyUser("Skibidi Defense", "v2.5 loaded! (Fluent UI)", 3)
+
+pcall(function() Window:SelectTab(1) end)
