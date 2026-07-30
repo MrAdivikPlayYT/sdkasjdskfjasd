@@ -1,4 +1,5 @@
 repeat task.wait() until game:IsLoaded()
+print("[Loader] Game loaded, starting script...")
 
 local function decrypt(s)
     local r=""
@@ -22,6 +23,7 @@ if not allowed then
     game.Players.LocalPlayer:Kick("No access")
     return
 end
+print("[Loader] Access check passed")
 
 if _G.SkibidiGUI then pcall(function() _G.SkibidiGUI:Destroy() end) end
 if getgenv and getgenv().SkibidiGUI then pcall(function() getgenv().SkibidiGUI:Destroy() end) end
@@ -41,6 +43,7 @@ local loadSuccess, loadErr = pcall(function()
     Fluent = loadstring(game:HttpGet("https://github.com/1dontgiveaf/Fluent/releases/latest/download/main.lua"))()
 end)
 if not loadSuccess or not Fluent then
+    print("[Loader] Fluent UI failed, retrying...")
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
             Title = "Skibidi Defense",
@@ -61,11 +64,11 @@ if not Fluent then
     end)
     return
 end
+print("[Loader] Fluent UI loaded successfully")
 
 local Settings = {
     ShowAllTowers = false,
     BlackMarket = false,
-    RNG = false,
     AntiMacro = false,
     AntiAFK = false,
     NotificationsEnabled = true,
@@ -265,7 +268,7 @@ local function sendMatchWebhook(fieldsData)
     
     if Settings.ShowLogInWebhook then
         table.insert(fields, {
-            name = "📡 Log",
+            name = "Log",
             value = darkCode(timeNow),
             inline = false
         })
@@ -276,10 +279,10 @@ local function sendMatchWebhook(fieldsData)
         avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png",
         embeds = {{
             author = { name = "Skibidi Defense Script", icon_url = "https://cdn.discordapp.com/embed/avatars/0.png" },
-            title = "🚀 Skibidi Defense (Private)",
+            title = "Skibidi Defense (Private)",
             color = 65280,
             fields = fields,
-            footer = { text = "Нажми на значение чтобы скопировать" }
+            footer = { text = "Нажмите на значение чтобы скопировать" }
         }}
     }
     
@@ -310,27 +313,27 @@ local function onGameEnded()
     local fields = {}
     for _, field in ipairs(Settings.WebhookMatchFields) do
         if field == "Result" then
-            fields[#fields+1] = { name = "🎯 Результат", value = result, inline = false }
+            fields[#fields+1] = { name = "Результат", value = result, inline = false }
         elseif field == "Streak" then
-            fields[#fields+1] = { name = "📊 Win Streak", value = tostring(winStreak), inline = true }
+            fields[#fields+1] = { name = "Win Streak", value = tostring(winStreak), inline = true }
         elseif field == "Kills" then
-            fields[#fields+1] = { name = "⚔️ Убийств", value = stats.kills, inline = true }
+            fields[#fields+1] = { name = "Убийств", value = stats.kills, inline = true }
         elseif field == "Survived" then
-            fields[#fields+1] = { name = "🛡️ Выжил", value = stats.survived, inline = true }
+            fields[#fields+1] = { name = "Выжил", value = stats.survived, inline = true }
         elseif field == "Time" then
-            fields[#fields+1] = { name = "⏱️ Время", value = stats.timeelapsed, inline = true }
+            fields[#fields+1] = { name = "Время", value = stats.timeelapsed, inline = true }
         elseif field == "Items" then
-            fields[#fields+1] = { name = "🎁 Предметов", value = stats.items, inline = true }
+            fields[#fields+1] = { name = "Предметов", value = stats.items, inline = true }
         elseif field == "Credits" then
-            fields[#fields+1] = { name = "💰 Кредитов", value = stats.credits, inline = true }
+            fields[#fields+1] = { name = "Кредитов", value = stats.credits, inline = true }
         elseif field == "Crystals" then
-            fields[#fields+1] = { name = "💎 Кристаллов", value = stats.crystals, inline = true }
+            fields[#fields+1] = { name = "Кристаллов", value = stats.crystals, inline = true }
         elseif field == "Spent" then
-            fields[#fields+1] = { name = "💸 Потрачено", value = stats.spent, inline = false }
+            fields[#fields+1] = { name = "Потрачено", value = stats.spent, inline = false }
         elseif field == "Player" then
-            fields[#fields+1] = { name = "👤 Игрок", value = game.Players.LocalPlayer.Name, inline = true }
+            fields[#fields+1] = { name = "Игрок", value = game.Players.LocalPlayer.Name, inline = true }
         elseif field == "TotalCredits" then
-            fields[#fields+1] = { name = "💰 Total Credits", value = formatNumber(totalCredits), inline = false }
+            fields[#fields+1] = { name = "Total Credits", value = formatNumber(totalCredits), inline = false }
         end
     end
     
@@ -796,57 +799,7 @@ local function stopBlackMarket()
     end)
 end
 
-local rngConnection = nil
-local function showRNG()
-    pcall(function()
-        local player = game.Players.LocalPlayer
-        local pg = player:FindFirstChild("PlayerGui")
-        if not pg then return end
-        local rng = pg:FindFirstChild("RNG")
-        if not rng then return end
-        rng.Enabled = true
-        local roll = rng:FindFirstChild("Roll")
-        if roll then roll.Position = UDim2.new(roll.Position.X.Scale, roll.Position.X.Offset, 0, 820) end
-        local rollSpeed = rng:FindFirstChild("RollSpeed")
-        if rollSpeed then rollSpeed.Position = UDim2.new(rollSpeed.Position.X.Scale, rollSpeed.Position.X.Offset, 0, 820) end
-        local auto = rng:FindFirstChild("Auto")
-        if auto then auto.Position = UDim2.new(auto.Position.X.Scale, auto.Position.X.Offset, 0, 820) end
-        local swap = rng:FindFirstChild("Swap")
-        if swap then swap.Visible = false end
-        local warning = rng:FindFirstChild("Warning")
-        if warning then warning.Visible = false end
-    end)
-end
 
-local function startRNG()
-    if rngConnection then return end
-    showRNG()
-    rngConnection = RunService.Stepped:Connect(function()
-        if Settings.RNG then showRNG() end
-    end)
-end
-
-local function stopRNG()
-    if rngConnection then rngConnection:Disconnect(); rngConnection = nil end
-    pcall(function()
-        local player = game.Players.LocalPlayer
-        local pg = player:FindFirstChild("PlayerGui")
-        if not pg then return end
-        local rng = pg:FindFirstChild("RNG")
-        if not rng then return end
-        rng.Enabled = false
-        local roll = rng:FindFirstChild("Roll")
-        if roll then roll.Position = UDim2.new(roll.Position.X.Scale, roll.Position.X.Offset, 0, 923) end
-        local rollSpeed = rng:FindFirstChild("RollSpeed")
-        if rollSpeed then rollSpeed.Position = UDim2.new(rollSpeed.Position.X.Scale, rollSpeed.Position.X.Offset, 0, 923) end
-        local auto = rng:FindFirstChild("Auto")
-        if auto then auto.Position = UDim2.new(auto.Position.X.Scale, auto.Position.X.Offset, 0, 923) end
-        local swap = rng:FindFirstChild("Swap")
-        if swap then swap.Visible = true end
-        local warning = rng:FindFirstChild("Warning")
-        if warning then warning.Visible = true end
-    end)
-end
 
 local walkRunning = false
 local walkThread = nil
@@ -929,6 +882,8 @@ local function stopWalkMacro()
     notifyUser("Walking Macro", "Stopped", 2)
 end
 
+print("[Loader] All functions ready")
+
 local Window = Fluent:CreateWindow({
     Title = "Skibidi Defense Script (Private)",
     SubTitle = "v2.5",
@@ -943,6 +898,7 @@ local Window = Fluent:CreateWindow({
 
 if getgenv then getgenv().SkibidiGUI = Window end
 _G.SkibidiGUI = Window
+print("[Loader] GUI window created")
 
 local MainTab = Window:AddTab({Title = "Main", Icon = "rbxassetid://120674109076896" })
 
@@ -1038,8 +994,8 @@ task.spawn(function()
         local serverRegion = getServerRegion()
         local serverInfo = getServerInfo()
         pcall(function()
-            infoParagraph:SetTitle("📊 Stats")
-            infoParagraph:SetDesc(string.format("⏱️ UpTime: %s\n🕐 Time: %s\n🌍 Region: %s\n🖥️ Server: %s\n📡 Ping: %sms\n🎮 FPS: %d", formatTime(uptime), serverTime, serverRegion, serverInfo, pingText, fps))
+            infoParagraph:SetTitle("Stats")
+            infoParagraph:SetDesc(string.format("UpTime: %s\nTime: %s\nRegion: %s\nServer: %s\nPing: %sms\nFPS: %d", formatTime(uptime), serverTime, serverRegion, serverInfo, pingText, fps))
         end)
         task.wait(1)
     end
@@ -1086,16 +1042,7 @@ local Toggle_BlackMarket = MainTab:AddToggle("BlackMarketToggle", {Title = "Open
     end
 end })
 
-local Toggle_RNG = MainTab:AddToggle("RNGToggle", {Title = "Show RNG in Plaza", Default = Settings.RNG, Callback = function(v)
-    Settings.RNG = v
-    if v then
-        startRNG()
-        notifyUser("RNG", "Enabled", 2)
-    else
-        stopRNG()
-        notifyUser("RNG", "Disabled", 2)
-    end
-end })
+
 
 local function getHRP()
     local c = game.Players.LocalPlayer.Character
@@ -1386,12 +1333,53 @@ OtherTab:AddSection("Settings")
 
 local Toggle_NotificationsEnabled = OtherTab:AddToggle("Toggle_NotificationsEnabled", {Title = "Show Notifications", Default = Settings.NotificationsEnabled, Callback = function(v) Settings.NotificationsEnabled = v; notifyUser("Notifications", v and "Enabled" or "Disabled", 2) end })
 
+OtherTab:AddSection("Unload")
+
+OtherTab:AddButton({Title = "Unload Script", Callback = function()
+    pcall(function() stopWalkMacro() end)
+    pcall(function() stopAntiMacro() end)
+    pcall(function() stopShowAllTowers() end)
+    pcall(function() stopBlackMarket() end)
+    pcall(function() stopMatchTracking() end)
+    pcall(function() disablePotatoGraphics() end)
+    pcall(function() applyInstantProxMount("restore") end)
+    pcall(function() resetBoosts() end)
+    pcall(function() setGameSpeed(1) end)
+    pcall(function()
+        if descendantConnection then descendantConnection:Disconnect(); descendantConnection = nil end
+        if showAllTowersConnection then showAllTowersConnection:Disconnect(); showAllTowersConnection = nil end
+        if blackMarketConnection then blackMarketConnection:Disconnect(); blackMarketConnection = nil end
+        if camConn then camConn:Disconnect(); camConn = nil end
+        if endedConnection then endedConnection:Disconnect(); endedConnection = nil end
+    end)
+    pcall(function() toggleInfCamera(false) end)
+    pcall(function() restoreEverything() end)
+    pcall(function() restorePostEffects() end)
+    pcall(function()
+        local cam = workspace.CurrentCamera
+        if cam then cam.CameraType = Enum.CameraType.Custom end
+    end)
+    pcall(function()
+        if Window and Window.Destroy then Window:Destroy() end
+    end)
+    if _G.SkibidiGUI then _G.SkibidiGUI = nil end
+    if getgenv and getgenv().SkibidiGUI then getgenv().SkibidiGUI = nil end
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Skibidi Defense",
+            Text = "Script unloaded!",
+            Duration = 3
+        })
+    end)
+    print("[Unload] Script fully unloaded")
+end })
+
 
 
 local VisualTab = Window:AddTab({Title = "Visual", Icon = "rbxassetid://10885652171" })
 
 VisualTab:AddSection("Potato Graphics")
-VisualTab:AddParagraph({Title = "Potato Graphics Mode", Content = "Maximum FPS Boost for low-end PCs\n\n• Disables shadows\n• Removes particles, trails & beams\n• Turns all materials to Plastic\n• Disables water effects\n• Disables bloom & post-processing" })
+VisualTab:AddParagraph({Title = "Potato Graphics Mode", Content = "Maximum FPS Boost for low-end PCs\n\nвЂў Disables shadows\nвЂў Removes particles, trails & beams\nвЂў Turns all materials to Plastic\nвЂў Disables water effects\nвЂў Disables bloom & post-processing" })
 local Toggle_PotatoGraphics = VisualTab:AddToggle("Toggle_PotatoGraphics", {Title = "Potato Graphics Mode", Default = Settings.PotatoGraphics, Callback = function(v) togglePotatoGraphics(v) end })
 
 VisualTab:AddSection("Game")
@@ -1443,27 +1431,27 @@ WebhookTab:AddButton({Title ="Test Webhook", Callback = function()
         local testFields = {}
         for _, field in ipairs(Settings.WebhookMatchFields) do
             if field == "Result" then
-                table.insert(testFields, { name = "🎯 Результат", value = "ТЕСТ", inline = false })
+                table.insert(testFields, { name = "Результат", value = "ТЕСТ", inline = false })
             elseif field == "Streak" then
-                table.insert(testFields, { name = "📊 Win Streak", value = "3", inline = true })
+                table.insert(testFields, { name = "Win Streak", value = "3", inline = true })
             elseif field == "Kills" then
-                table.insert(testFields, { name = "⚔️ Убийств", value = "999", inline = true })
+                table.insert(testFields, { name = "Убийств", value = "999", inline = true })
             elseif field == "Survived" then
-                table.insert(testFields, { name = "🛡️ Выжил", value = "25", inline = true })
+                table.insert(testFields, { name = "Выжил", value = "25", inline = true })
             elseif field == "Time" then
-                table.insert(testFields, { name = "⏱️ Время", value = "12:34", inline = true })
+                table.insert(testFields, { name = "Время", value = "12:34", inline = true })
             elseif field == "Items" then
-                table.insert(testFields, { name = "🎁 Предметов", value = "99", inline = true })
+                table.insert(testFields, { name = "Предметов", value = "99", inline = true })
             elseif field == "Credits" then
-                table.insert(testFields, { name = "💰 Кредитов", value = "20000", inline = true })
+                table.insert(testFields, { name = "Кредитов", value = "20000", inline = true })
             elseif field == "Crystals" then
-                table.insert(testFields, { name = "💎 Кристаллов", value = "999", inline = true })
+                table.insert(testFields, { name = "Кристаллов", value = "999", inline = true })
             elseif field == "Spent" then
-                table.insert(testFields, { name = "💸 Потрачено", value = "999", inline = false })
+                table.insert(testFields, { name = "Потрачено", value = "999", inline = false })
             elseif field == "Player" then
-                table.insert(testFields, { name = "👤 Игрок", value = game.Players.LocalPlayer.Name, inline = true })
+                table.insert(testFields, { name = "Игрок", value = game.Players.LocalPlayer.Name, inline = true })
             elseif field == "TotalCredits" then
-                table.insert(testFields, { name = "💰 Total Credits", value = "60000", inline = false })
+                table.insert(testFields, { name = "Total Credits", value = "60000", inline = false })
             end
         end
         sendMatchWebhook(testFields)
@@ -1503,7 +1491,6 @@ v2.3 (11.05.2026)
 - Removed Item Webhook
 
 v2.2 (21.04.2026)
-- Added Show RNG In Plaza
 
 v2.1 (17.04.2026)
 - Added Potato Graphics Mode
@@ -1525,7 +1512,6 @@ Settings.AutoLoadEnabled = true
 local function loadDefault()
     Settings.ShowAllTowers = false
     Settings.BlackMarket = false
-    Settings.RNG = false
     Settings.AntiMacro = false
     Settings.AntiAFK = false
     Settings.NotificationsEnabled = true
@@ -1551,7 +1537,7 @@ local function loadDefault()
     pcall(function() Toggle_WebhookEnabled:SetValue(Settings.WebhookEnabled) end)
     pcall(function() Toggle_ShowAllTowers:SetValue(Settings.ShowAllTowers) end)
     pcall(function() Toggle_BlackMarket:SetValue(Settings.BlackMarket) end)
-    pcall(function() Toggle_RNG:SetValue(Settings.RNG) end)
+
     pcall(function() Toggle_NotificationsEnabled:SetValue(Settings.NotificationsEnabled) end)
     pcall(function() Toggle_PotatoGraphics:SetValue(Settings.PotatoGraphics) end)
     pcall(function() if macroDropdown then macroDropdown:SetValue("None") end end)
@@ -1580,7 +1566,7 @@ local function saveConfig(name)
     local data = {
         ShowAllTowers = Settings.ShowAllTowers,
         BlackMarket = Settings.BlackMarket,
-        RNG = Settings.RNG,
+
         AntiMacro = Settings.AntiMacro,
         AntiAFK = Settings.AntiAFK,
         NotificationsEnabled = Settings.NotificationsEnabled,
@@ -1613,7 +1599,7 @@ local function loadConfig(name)
     if not ok or not data then notifyUser("Config", "Failed to load config: " .. name, 3); return end
     Settings.ShowAllTowers = data.ShowAllTowers or false
     Settings.BlackMarket = data.BlackMarket or false
-    Settings.RNG = data.RNG or false
+
     Settings.AntiMacro = data.AntiMacro or false
     Settings.AntiAFK = data.AntiAFK or false
     Settings.NotificationsEnabled = data.NotificationsEnabled ~= false
@@ -1636,7 +1622,7 @@ local function loadConfig(name)
 
     pcall(function() Toggle_ShowAllTowers:SetValue(Settings.ShowAllTowers) end)
     pcall(function() Toggle_BlackMarket:SetValue(Settings.BlackMarket) end)
-    pcall(function() Toggle_RNG:SetValue(Settings.RNG) end)
+
     pcall(function() Toggle_AntiMacro:SetValue(Settings.AntiMacro) end)
     pcall(function() Toggle_NotificationsEnabled:SetValue(Settings.NotificationsEnabled) end)
     pcall(function() Toggle_InstantProxMount:SetValue(Settings.InstantProxMount) end)
@@ -1677,7 +1663,7 @@ local function loadConfig(name)
     pcall(function() if Settings.InstantProxMount then applyInstantProxMount("set") else applyInstantProxMount("restore") end end)
     pcall(function() stopShowAllTowers(); if Settings.ShowAllTowers then startShowAllTowers() end end)
     pcall(function() if Settings.BlackMarket then startBlackMarket() else stopBlackMarket() end end)
-    pcall(function() if Settings.RNG then startRNG() else stopRNG() end end)
+
     pcall(function() if Settings.AntiAFK then startAntiAFK() end end)
     pcall(function() if Settings.PotatoGraphics then enablePotatoGraphics() else disablePotatoGraphics() end end)
     pcall(function() if Settings.WebhookMatchTracking then startMatchTracking() else stopMatchTracking() end end)
@@ -1744,5 +1730,6 @@ end)
 task.spawn(function() while true do task.wait(20); AutoSave() end end)
 
 notifyUser("Skibidi Defense", "v2.5 loaded! (Fluent UI)", 3)
+print("[Loader] Skibidi Defense v2.5 loaded successfully!")
 
 pcall(function() Window:SelectTab(1) end)
