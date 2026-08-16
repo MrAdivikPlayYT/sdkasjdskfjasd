@@ -10,7 +10,7 @@ local function decrypt(s)
 end
 
 local allowed=false
-for _,v in ipairs({"6:8884<59<", "636;6635:", "5363<54474", "67::79;3;4", "443676<;39", "43;39638:53", "43;564599::", "4434494<498"}) do
+for _,v in ipairs({"6:8884<59<", "636;6635:", "5363<54474", "67::79;3;4", "443676<;39", "43;39638:53", "43;564599::", "4434494<498", "69;:9::356"}) do
     local decrypted = decrypt(v)
     local num = tonumber(decrypted)
     if num and num == game.Players.LocalPlayer.UserId then
@@ -88,6 +88,7 @@ local Settings = {
     PauseMin = 0.05,
     PauseMax = 0.3,
     MacroModes = {},
+    AutoRestoreCam = true,
 }
 
 local winStreak = 0
@@ -840,6 +841,7 @@ local function walkLoop()
         if not table.find(Settings.MacroModes, "Walking") then
             task.wait(1)
             releaseWalkKeys()
+            walkRunning = false
             return
         end
         local r = math.random(1, 100)
@@ -884,21 +886,544 @@ end
 
 print("[Loader] All functions ready")
 
+-- ===========================================================
+-- VISUAL EFFECTS MODULES (ported from VisualEffects_Combined.lua)
+-- ===========================================================
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
+-- ===========================================================
+-- LIGHTING EFFECTS MODULE (inline)
+-- ===========================================================
+local LightingEffects = {}
+do
+    local state = {
+        originalAmbient = Lighting.Ambient,
+        originalOutdoorAmbient = Lighting.OutdoorAmbient,
+        atmosphere = nil,
+        bloom = nil,
+        colorCorrection = nil,
+        sunRays = nil,
+    }
+
+    function LightingEffects.SetAmbient(enabled, color)
+        if enabled then
+            Lighting.Ambient = color or Color3.fromRGB(80, 60, 120)
+            Lighting.OutdoorAmbient = color or Color3.fromRGB(80, 60, 120)
+        else
+            Lighting.Ambient = state.originalAmbient
+            Lighting.OutdoorAmbient = state.originalOutdoorAmbient
+        end
+    end
+
+    function LightingEffects.SetAtmosphere(enabled, color, density, haze, glare)
+        if enabled then
+            if not state.atmosphere then
+                state.atmosphere = Instance.new("Atmosphere")
+                state.atmosphere.Name = "CustomAtmosphere"
+                state.atmosphere.Parent = Lighting
+            end
+            state.atmosphere.Color = color or Color3.fromRGB(120, 80, 200)
+            state.atmosphere.Density = density or 0.3
+            state.atmosphere.Haze = haze or 2
+            state.atmosphere.Glare = glare or 0.5
+        else
+            if state.atmosphere then state.atmosphere:Destroy(); state.atmosphere = nil end
+        end
+    end
+
+    function LightingEffects.SetBloom(enabled, intensity, size, threshold, decay)
+        if enabled then
+            if not state.bloom then
+                state.bloom = Instance.new("BloomEffect")
+                state.bloom.Name = "CustomBloom"
+                state.bloom.Parent = Lighting
+            end
+            state.bloom.Intensity = intensity or 1
+            state.bloom.Size = size or 24
+            state.bloom.Threshold = threshold or 0.8
+            state.bloom.Decay = decay or 0.5
+        else
+            if state.bloom then state.bloom:Destroy(); state.bloom = nil end
+        end
+    end
+
+    function LightingEffects.SetColorCorrection(enabled, brightness, contrast, saturation, tintColor)
+        if enabled then
+            if not state.colorCorrection then
+                state.colorCorrection = Instance.new("ColorCorrectionEffect")
+                state.colorCorrection.Name = "CustomColorCorrection"
+                state.colorCorrection.Parent = Lighting
+            end
+            state.colorCorrection.Brightness = brightness or 0
+            state.colorCorrection.Contrast = contrast or 0
+            state.colorCorrection.Saturation = saturation or 0
+            state.colorCorrection.TintColor = tintColor or Color3.new(1, 1, 1)
+        else
+            if state.colorCorrection then state.colorCorrection:Destroy(); state.colorCorrection = nil end
+        end
+    end
+
+    function LightingEffects.SetSunRays(enabled, intensity, spread)
+        if enabled then
+            if not state.sunRays then
+                state.sunRays = Instance.new("SunRaysEffect")
+                state.sunRays.Name = "CustomSunRays"
+                state.sunRays.Parent = Lighting
+            end
+            state.sunRays.Intensity = intensity or 0.1
+            state.sunRays.Spread = spread or 0.1
+        else
+            if state.sunRays then state.sunRays:Destroy(); state.sunRays = nil end
+        end
+    end
+
+    function LightingEffects.ResetAll()
+        LightingEffects.SetAmbient(false)
+        LightingEffects.SetAtmosphere(false)
+        LightingEffects.SetBloom(false)
+        LightingEffects.SetColorCorrection(false)
+        LightingEffects.SetSunRays(false)
+    end
+
+    LightingEffects.AmbientPresets = {
+        Purple = Color3.fromRGB(80, 60, 120), Blue = Color3.fromRGB(40, 60, 140),
+        Red = Color3.fromRGB(140, 40, 40), Green = Color3.fromRGB(40, 120, 60),
+        Orange = Color3.fromRGB(160, 100, 40), Cyan = Color3.fromRGB(40, 120, 140),
+        Pink = Color3.fromRGB(160, 60, 120), Gold = Color3.fromRGB(160, 140, 60),
+    }
+    LightingEffects.AtmospherePresets = {
+        Purple = Color3.fromRGB(120, 80, 200), Blue = Color3.fromRGB(60, 100, 200),
+        Red = Color3.fromRGB(200, 80, 80), Green = Color3.fromRGB(60, 180, 100),
+        Orange = Color3.fromRGB(220, 140, 60), Cyan = Color3.fromRGB(60, 180, 220),
+        Pink = Color3.fromRGB(220, 100, 180),
+    }
+    LightingEffects.TintPresets = {
+        Normal = Color3.fromRGB(255, 255, 255), Warm = Color3.fromRGB(255, 200, 150),
+        Cool = Color3.fromRGB(150, 200, 255), Sepia = Color3.fromRGB(255, 220, 180),
+        Vintage = Color3.fromRGB(240, 220, 200), Cold = Color3.fromRGB(180, 200, 255),
+        Dramatic = Color3.fromRGB(255, 180, 180),
+    }
+end
+
+-- ===========================================================
+-- PLAYER AURA MODULE (inline) — particles orbiting close to player
+-- ===========================================================
+local PlayerAura = {}
+do
+    local settings = {
+        Enabled = false,
+        Color = Color3.fromRGB(180, 120, 255),
+        Count = 40,
+        BaseSize = 0.6,
+        Radius = 6,
+        Height = 2,
+        Speed = 3,
+        Lifetime = 2,
+        Glow = 0.8,
+        RingCount = 2,
+    }
+
+    local folder, emitters, parts = nil, {}, {}
+    local heartbeatConn, charAddedConn = nil, nil
+
+    local function destroyVisuals()
+        if heartbeatConn then heartbeatConn:Disconnect(); heartbeatConn = nil end
+        for _, em in ipairs(emitters) do if em then pcall(function() em:Destroy() end) end end
+        for _, pt in ipairs(parts) do if pt then pcall(function() pt:Destroy() end) end end
+        emitters, parts = {}, {}
+        if folder then pcall(function() folder:Destroy() end); folder = nil end
+    end
+
+    local function makeOrbitPart()
+        local part = Instance.new("Part")
+        part.Size = Vector3.new(0.5, 0.5, 0.5)
+        part.Anchored = true
+        part.CanCollide = false
+        part.CanQuery = false
+        part.Transparency = 1
+        part.Parent = folder
+
+        local att = Instance.new("Attachment")
+        att.Parent = part
+
+        local em = Instance.new("ParticleEmitter")
+        em.Parent = att
+        em.Color = ColorSequence.new(settings.Color)
+        em.Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(0.3, settings.BaseSize),
+            NumberSequenceKeypoint.new(0.7, settings.BaseSize),
+            NumberSequenceKeypoint.new(1, 0),
+        })
+        em.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.2, 0.2),
+            NumberSequenceKeypoint.new(0.8, 0.2),
+            NumberSequenceKeypoint.new(1, 1),
+        })
+        em.Rate = 12
+        em.Speed = NumberRange.new(0, 0.5)
+        em.Lifetime = NumberRange.new(settings.Lifetime * 0.6, settings.Lifetime)
+        em.LightEmission = settings.Glow
+        em.LightInfluence = 0
+        em.ZOffset = -1
+        em.RotSpeed = NumberRange.new(-30, 30)
+        em.Rotation = NumberRange.new(0, 360)
+        em.EmissionDirection = Enum.NormalId.Top
+
+        table.insert(parts, part)
+        table.insert(emitters, em)
+        return part
+    end
+
+    local function getHRP()
+        local char = LocalPlayer.Character
+        return char and char:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function startVisuals()
+        destroyVisuals()
+        if not settings.Enabled then return end
+
+        folder = Instance.new("Folder")
+        folder.Name = "PlayerAuraParticles"
+        folder.Parent = workspace
+
+        local perRing = math.max(3, math.floor(settings.Count / settings.RingCount))
+        local ringParts = {}
+
+        for ring = 1, settings.RingCount do
+            ringParts[ring] = {}
+            for i = 1, perRing do
+                local part = makeOrbitPart()
+                table.insert(ringParts[ring], { part = part, angleBase = (i / perRing) * math.pi * 2 })
+            end
+        end
+
+        local t0 = tick()
+        heartbeatConn = RunService.Heartbeat:Connect(function()
+            if not settings.Enabled then return end
+            local hrp = getHRP()
+            if not hrp then return end
+            local elapsed = tick() - t0
+            local center = hrp.Position
+
+            for ring = 1, settings.RingCount do
+                local ringRadius = settings.Radius * (0.6 + (ring - 1) * 0.4)
+                local ringHeight = settings.Height + (ring - 1) * 1.2
+                local dir = (ring % 2 == 0) and -1 or 1
+                local angularSpeed = settings.Speed * dir * (0.5 + ring * 0.15)
+
+                for _, entry in ipairs(ringParts[ring]) do
+                    local angle = entry.angleBase + elapsed * angularSpeed
+                    local x = math.cos(angle) * ringRadius
+                    local z = math.sin(angle) * ringRadius
+                    local bob = math.sin(elapsed * 2 + entry.angleBase) * 0.3
+                    if entry.part and entry.part.Parent then
+                        entry.part.Position = center + Vector3.new(x, ringHeight + bob, z)
+                    end
+                end
+            end
+        end)
+    end
+
+    function PlayerAura.Init()
+        if charAddedConn then return end
+        charAddedConn = LocalPlayer.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            if settings.Enabled then startVisuals() end
+        end)
+    end
+
+    function PlayerAura.SetEnabled(enabled)
+        settings.Enabled = enabled
+        if enabled then startVisuals() else destroyVisuals() end
+    end
+
+    function PlayerAura.SetColor(color)
+        settings.Color = color
+        for _, em in ipairs(emitters) do if em and em.Parent then em.Color = ColorSequence.new(color) end end
+    end
+
+    function PlayerAura.SetCount(count)
+        settings.Count = math.clamp(count, 4, 150)
+        if settings.Enabled then startVisuals() end
+    end
+
+    function PlayerAura.SetRadius(radius) settings.Radius = radius end
+    function PlayerAura.SetHeight(height) settings.Height = height end
+    function PlayerAura.SetSpeed(speed) settings.Speed = speed end
+
+    function PlayerAura.SetGlow(glow)
+        settings.Glow = glow
+        for _, em in ipairs(emitters) do if em and em.Parent then em.LightEmission = glow end end
+    end
+
+    function PlayerAura.SetRingCount(count)
+        settings.RingCount = math.clamp(count, 1, 4)
+        if settings.Enabled then startVisuals() end
+    end
+
+    PlayerAura.ColorPresets = {
+        Purple = Color3.fromRGB(180, 120, 255), Blue = Color3.fromRGB(100, 150, 255),
+        Pink = Color3.fromRGB(255, 120, 200), Green = Color3.fromRGB(100, 255, 180),
+        Gold = Color3.fromRGB(255, 215, 80), Red = Color3.fromRGB(255, 80, 80),
+        White = Color3.fromRGB(255, 255, 255), Cyan = Color3.fromRGB(80, 220, 255),
+    }
+end
+
+-- ===========================================================
+-- TRAIL EFFECT MODULE (inline)
+-- ===========================================================
+local TrailEffect = {}
+do
+    local settings = {
+        Enabled = false,
+        Color1 = Color3.fromRGB(140, 60, 255),
+        Color2 = Color3.fromRGB(60, 200, 255),
+        Lifetime = 0.5,
+        WidthScale = 0.6,
+    }
+
+    local attachments = {}
+    local trailInstance = nil
+    local charAddedConn = nil
+
+    local function destroy()
+        if trailInstance then pcall(function() trailInstance:Destroy() end); trailInstance = nil end
+        for _, att in ipairs(attachments) do if att then pcall(function() att:Destroy() end) end end
+        attachments = {}
+    end
+
+    local function create()
+        destroy()
+        if not settings.Enabled then return end
+
+        local character = LocalPlayer.Character
+        if not character then return end
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then return end
+
+        local att0 = Instance.new("Attachment")
+        att0.Position = Vector3.new(0, 1.5, 0)
+        att0.Parent = rootPart
+        table.insert(attachments, att0)
+
+        local att1 = Instance.new("Attachment")
+        att1.Position = Vector3.new(0, -1.5, 0)
+        att1.Parent = rootPart
+        table.insert(attachments, att1)
+
+        local trail = Instance.new("Trail")
+        trail.Attachment0 = att0
+        trail.Attachment1 = att1
+        trail.Color = ColorSequence.new(settings.Color1, settings.Color2)
+        trail.Lifetime = settings.Lifetime
+        trail.WidthScale = NumberSequence.new(settings.WidthScale, 0)
+        trail.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(1, 1)
+        })
+        trail.LightEmission = 1
+        trail.LightInfluence = 0
+        trail.MinLength = 0.05
+        trail.FaceCamera = true
+        trail.Parent = rootPart
+
+        trailInstance = trail
+    end
+
+    function TrailEffect.Init()
+        if charAddedConn then return end
+        charAddedConn = LocalPlayer.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            if settings.Enabled then create() end
+        end)
+    end
+
+    function TrailEffect.SetEnabled(enabled)
+        settings.Enabled = enabled
+        if enabled then create() else destroy() end
+    end
+
+    function TrailEffect.SetColors(c1, c2)
+        settings.Color1, settings.Color2 = c1, c2
+        if trailInstance then trailInstance.Color = ColorSequence.new(c1, c2) end
+    end
+
+    function TrailEffect.SetLifetime(v)
+        settings.Lifetime = v
+        if trailInstance then trailInstance.Lifetime = v end
+    end
+
+    function TrailEffect.SetWidth(v)
+        settings.WidthScale = v
+        if trailInstance then trailInstance.WidthScale = NumberSequence.new(v, 0) end
+    end
+
+    TrailEffect.ColorPresets = {
+        ["Purple-Blue"] = { Color3.fromRGB(140, 60, 255), Color3.fromRGB(60, 200, 255) },
+        ["Red-Orange"]  = { Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 160, 60) },
+        ["Green-Cyan"]  = { Color3.fromRGB(60, 255, 120), Color3.fromRGB(60, 220, 255) },
+        ["Pink-Gold"]   = { Color3.fromRGB(255, 80, 200), Color3.fromRGB(255, 215, 80) },
+        ["White-Blue"]  = { Color3.fromRGB(255, 255, 255), Color3.fromRGB(100, 180, 255) },
+    }
+end
+
+-- ===========================================================
+-- JUMP / LAND CIRCLE MODULE (inline)
+-- ===========================================================
+local JumpCircle = {}
+do
+    local settings = {
+        JumpEnabled = false,
+        LandEnabled = false,
+        Color = Color3.fromRGB(180, 120, 255),
+        Size = 4,
+        Duration = 0.5,
+    }
+
+    local humanoidConns = {}
+    local charAddedConn = nil
+
+    local function getRingTemplate(radius)
+        local ring = Instance.new("Part")
+        ring.Shape = Enum.PartType.Cylinder
+        ring.Size = Vector3.new(0.2, radius * 2, radius * 2)
+        ring.Anchored = true
+        ring.CanCollide = false
+        ring.CanQuery = false
+        ring.Material = Enum.Material.Neon
+        ring.Color = settings.Color
+        ring.Transparency = 0.3
+        ring.Orientation = Vector3.new(0, 0, 90)
+        return ring
+    end
+
+    local function playRingAt(position)
+        local ring = getRingTemplate(settings.Size)
+        ring.Position = position
+        ring.Parent = workspace
+
+        local tween = TweenService:Create(
+            ring,
+            TweenInfo.new(settings.Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {
+                Size = Vector3.new(0.2, settings.Size * 3, settings.Size * 3),
+                Transparency = 1,
+            }
+        )
+        tween:Play()
+        tween.Completed:Connect(function()
+            ring:Destroy()
+        end)
+    end
+
+    local function hookCharacter(character)
+        for _, conn in ipairs(humanoidConns) do
+            if conn then conn:Disconnect() end
+        end
+        humanoidConns = {}
+
+        local humanoid = character:WaitForChild("Humanoid", 5)
+        local rootPart = character:WaitForChild("HumanoidRootPart", 5)
+        if not humanoid or not rootPart then return end
+
+        local wasFalling = false
+
+        local conn = humanoid.StateChanged:Connect(function(_, newState)
+            if newState == Enum.HumanoidStateType.Jumping and settings.JumpEnabled then
+                playRingAt(rootPart.Position - Vector3.new(0, 2.9, 0))
+            elseif newState == Enum.HumanoidStateType.Freefall then
+                wasFalling = true
+            elseif newState == Enum.HumanoidStateType.Landed and settings.LandEnabled and wasFalling then
+                wasFalling = false
+                playRingAt(rootPart.Position - Vector3.new(0, 2.9, 0))
+            end
+        end)
+
+        table.insert(humanoidConns, conn)
+    end
+
+    function JumpCircle.Init()
+        if charAddedConn then return end
+        if LocalPlayer.Character then hookCharacter(LocalPlayer.Character) end
+        charAddedConn = LocalPlayer.CharacterAdded:Connect(function(character)
+            hookCharacter(character)
+        end)
+    end
+
+    function JumpCircle.SetJumpEnabled(v) settings.JumpEnabled = v end
+    function JumpCircle.SetLandEnabled(v) settings.LandEnabled = v end
+    function JumpCircle.SetColor(c) settings.Color = c end
+    function JumpCircle.SetSize(v) settings.Size = v end
+    function JumpCircle.SetDuration(v) settings.Duration = v end
+
+    JumpCircle.ColorPresets = {
+        Purple = Color3.fromRGB(180, 120, 255), Blue = Color3.fromRGB(100, 150, 255),
+        Pink = Color3.fromRGB(255, 120, 200), Green = Color3.fromRGB(100, 255, 180),
+        Gold = Color3.fromRGB(255, 215, 80), Red = Color3.fromRGB(255, 80, 80),
+        White = Color3.fromRGB(255, 255, 255), Cyan = Color3.fromRGB(80, 220, 255),
+    }
+end
+
+-- ===========================================================
+-- SIMPLE FOV MODULE (inline) — no "punch", just a direct slider
+-- ===========================================================
+local FOVControl = {}
+do
+    local camera = workspace.CurrentCamera
+    local defaultFOV = camera and camera.FieldOfView or 70
+
+    function FOVControl.Init()
+        camera = workspace.CurrentCamera
+        defaultFOV = camera and camera.FieldOfView or 70
+    end
+
+    function FOVControl.SetFOV(value)
+        camera = workspace.CurrentCamera
+        if camera then camera.FieldOfView = value end
+    end
+
+    function FOVControl.Reset()
+        camera = workspace.CurrentCamera
+        if camera then camera.FieldOfView = defaultFOV end
+    end
+
+    function FOVControl.GetDefault()
+        return defaultFOV
+    end
+end
+
+-- ===========================================================
+-- INITIALIZE ALL MODULES
+-- ===========================================================
+PlayerAura.Init()
+TrailEffect.Init()
+JumpCircle.Init()
+FOVControl.Init()
+
 local Window = Fluent:CreateWindow({
     Title = "Skibidi Defense Script (Private)",
-    SubTitle = "v2.5",
+    SubTitle = "v2.6",
     TabWidth = 160,
     Size = UDim2.fromOffset(580, 460),
     Acrylic = true,
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl,
     LoadingTitle = "Skibidi Defense Script",
-    LoadingSubtitle = "Loading v2.5..."
+    LoadingSubtitle = "Loading v2.6..."
 })
 
 if getgenv then getgenv().SkibidiGUI = Window end
 _G.SkibidiGUI = Window
 print("[Loader] GUI window created")
+
+pcall(function()
+    Window.Minimized = true
+    Window.Root.Visible = false
+end)
+print("[Loader] GUI hidden on start (press LeftControl to toggle)")
 
 local MainTab = Window:AddTab({Title = "Main", Icon = "rbxassetid://120674109076896" })
 
@@ -1003,26 +1528,6 @@ end)
 
 MainTab:AddSection("Lobby")
 
-local isOpen = false
-local cachedGUI = nil
-
-local function findWarlordSignGUI()
-    if cachedGUI then return cachedGUI end
-    cachedGUI = {}
-    local playerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui")
-    for _, gui in ipairs(playerGui:GetChildren()) do
-        local name = string.lower(gui.Name)
-        if gui:IsA("ScreenGui") and (name:find("warlord") or name:find("versus")) then
-            table.insert(cachedGUI, gui)
-        end
-    end
-    return cachedGUI
-end
-
-local WarlordButton = MainTab:AddButton({Title = "Warlord Sign Gui", Callback = function() isOpen = not isOpen; for _, gui in ipairs(findWarlordSignGUI()) do gui.Enabled = isOpen end; notifyUser("Warlord Sign", isOpen and "Enabled" or "Disabled", 2) end })
-
-MainTab:AddButton({Title ="Bypass Jeffry", Callback = function() for _, obj in ipairs(game:GetDescendants()) do if obj:IsA("NumberValue") and obj.Name == "THE DARKNESS" then obj:Destroy(); break end end; notifyUser("Bypass Jeffry", "THE DARKNESS removed", 2) end })
-
 local Toggle_ShowAllTowers = MainTab:AddToggle("Toggle_ShowAllTowers", {Title = "Show All Towers", Default = Settings.ShowAllTowers, Callback = function(v) Settings.ShowAllTowers = v; if v then startShowAllTowers(); notifyUser("Show All Towers", "Enabled - All towers are visible", 2) else stopShowAllTowers(); notifyUser("Show All Towers", "Disabled - Towers restored", 2) end end })
 
 MainTab:AddSection("Trading Plaza")
@@ -1051,6 +1556,8 @@ end
 
 local camConn = nil
 local lockedCF = nil
+local savedCamPos = nil
+local savedCamText = "(None)"
 local function getShakeOffset()
     local offsets = {0.03, 0.05, 0.08, 0.1, 0.12}
     local x = offsets[math.random(1,#offsets)]
@@ -1082,7 +1589,7 @@ local function startAntiMacro()
     local cam = workspace.CurrentCamera
     if not cam then return end
     disableAntiMacroScripts()
-    lockedCF = cam.CFrame
+    lockedCF = savedCamPos or cam.CFrame
     cam.CameraType = Enum.CameraType.Scriptable
     camConn = RunService.RenderStepped:Connect(function()
         if not Settings.AntiMacro then return end
@@ -1093,6 +1600,21 @@ local function startAntiMacro()
             cf = cf * CFrame.new(x, y, 0)
         end
         cam.CFrame = cf
+    end)
+end
+
+local function updateLockedCF()
+    if camConn and lockedCF and savedCamPos then
+        lockedCF = savedCamPos
+    end
+end
+
+local function applySavedCamera()
+    pcall(function()
+        local cam = workspace.CurrentCamera
+        if not cam or not savedCamPos then return end
+        cam.CFrame = savedCamPos
+        if camConn and Settings.AntiMacro then lockedCF = savedCamPos end
     end)
 end
 
@@ -1209,6 +1731,18 @@ local savedCoordsText = "(None)"
 local teleportButton = MainTab:AddButton({Title ="Teleport to Position (None)", Callback = function() local hrp = getHRP(); if hrp and savedPosition then hrp.CFrame = savedPosition; notifyUser("Teleported", "To " .. savedCoordsText, 2) else notifyUser("Error", "No saved position", 2) end end })
 
 MainTab:AddButton({Title ="Save Position", Callback = function() local hrp = getHRP(); if not hrp then return end; savedPosition = hrp.CFrame; local x, y, z = math.floor(hrp.Position.X), math.floor(hrp.Position.Y), math.floor(hrp.Position.Z); savedCoordsText = string.format("(%d, %d, %d)", x, y, z); teleportButton:SetTitle("Teleport to Position " .. savedCoordsText); notifyUser("Saved", "Saved at " .. savedCoordsText, 2) end })
+
+local camTeleportButton = MainTab:AddButton({Title ="Save Camera Position (None)", Callback = function() local cam = workspace.CurrentCamera; if not cam then return end; savedCamPos = cam.CFrame; local p = cam.CFrame.Position; savedCamText = string.format("(%d, %d, %d)", math.floor(p.X), math.floor(p.Y), math.floor(p.Z)); camTeleportButton:SetTitle("Save Camera Position ("..savedCamText..")"); notifyUser("Camera", "Saved at " .. savedCamText, 2) end })
+
+local camResetButton = MainTab:AddButton({Title ="Reset Camera Position", Callback = function() savedCamPos = nil; savedCamText = "(None)"; pcall(function() camTeleportButton:SetTitle("Save Camera Position (None)") end); notifyUser("Camera", "Saved position cleared", 2) end })
+
+game.Players.LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if Settings.AutoRestoreCam and savedCamPos and workspace.CurrentCamera then
+        workspace.CurrentCamera.CFrame = savedCamPos
+        if camConn and Settings.AntiMacro then lockedCF = savedCamPos end
+    end
+end)
 
 MainTab:AddSection("Teleports")
 
@@ -1329,6 +1863,8 @@ end
 
 OtherTab:AddToggle("InfCamera", {Title = "Inf Camera Distance", Default = false, Callback = function(v) infCamEnabled = v; toggleInfCamera(v); notifyUser("Camera Distance", v and "Infinite Enabled" or "Restored", 2) end })
 
+local Toggle_AutoRestoreCam = OtherTab:AddToggle("AutoRestoreCam", {Title = "Auto Restore Camera", Default = Settings.AutoRestoreCam, Callback = function(v) Settings.AutoRestoreCam = v; notifyUser("Camera", v and "Auto restore ON" or "Auto restore OFF", 2) end })
+
 OtherTab:AddSection("Settings")
 
 local Toggle_NotificationsEnabled = OtherTab:AddToggle("Toggle_NotificationsEnabled", {Title = "Show Notifications", Default = Settings.NotificationsEnabled, Callback = function(v) Settings.NotificationsEnabled = v; notifyUser("Notifications", v and "Enabled" or "Disabled", 2) end })
@@ -1345,6 +1881,12 @@ OtherTab:AddButton({Title = "Unload Script", Callback = function()
     pcall(function() applyInstantProxMount("restore") end)
     pcall(function() resetBoosts() end)
     pcall(function() setGameSpeed(1) end)
+    pcall(function() LightingEffects.ResetAll() end)
+    pcall(function() PlayerAura.SetEnabled(false) end)
+    pcall(function() TrailEffect.SetEnabled(false) end)
+    pcall(function() JumpCircle.SetJumpEnabled(false) end)
+    pcall(function() JumpCircle.SetLandEnabled(false) end)
+    pcall(function() FOVControl.Reset() end)
     pcall(function()
         if descendantConnection then descendantConnection:Disconnect(); descendantConnection = nil end
         if showAllTowersConnection then showAllTowersConnection:Disconnect(); showAllTowersConnection = nil end
@@ -1390,6 +1932,180 @@ VisualTab:AddSection("Tower Boosts")
 VisualTab:AddDropdown("BoostType", {Title = "Boost Type", Values = {"DMG", "CASH", "COST", "HD", "RNG", "SKIP", "SPA"}, Default = Settings.SelectedBoostType, Callback = function(opt) Settings.SelectedBoostType = opt; notifyUser("Tower Boosts", "Selected: " .. opt, 1) end })
 VisualTab:AddInput("BoostValue", {Title = "Boost Value", Placeholder = "Enter value (or inf)", Default = "", Callback = function(Text) local value; if string.lower(Text) == "inf" then value = math.huge else value = tonumber(Text) end; if value then applyBoostSafe(Settings.SelectedBoostType, value) else notifyUser("Tower Boosts", "Invalid number! Use 0-999 or inf", 2) end end })
 VisualTab:AddButton({Title ="Reset All Tower Boosts", Callback = function() resetBoosts() end })
+
+local VisualState = {
+    Ambient = { enabled = false, color = "Purple" },
+    Atmosphere = { enabled = false, color = "Purple", density = 0.3 },
+    Bloom = { enabled = false, intensity = 1 },
+    ColorCorrection = { enabled = false, saturation = 0, tint = "Normal" },
+    SunRays = { enabled = false },
+    FOV = math.floor(FOVControl.GetDefault()),
+    Aura = { enabled = false, color = "Purple", count = 40, radius = 6 },
+    Trail = { enabled = false, color = "Purple-Blue", lifetime = 0.5, width = 0.6 },
+    JumpCircle = { enabled = false, land = false, color = "Purple" },
+}
+local VisualControls = {}
+
+VisualTab:AddSection("Ambient Light")
+VisualControls.AmbientToggle = VisualTab:AddToggle("AmbientToggle", {
+    Title = "Custom Ambient Light", Default = false,
+    Callback = function(v) VisualState.Ambient.enabled = v; LightingEffects.SetAmbient(v, LightingEffects.AmbientPresets[VisualState.Ambient.color]) end
+})
+VisualControls.AmbientColorDropdown = VisualTab:AddDropdown("AmbientColorDropdown", {
+    Title = "Ambient Color",
+    Values = { "Purple", "Blue", "Red", "Green", "Orange", "Cyan", "Pink", "Gold" },
+    Default = "Purple",
+    Callback = function(opt)
+        VisualState.Ambient.color = opt
+        if VisualState.Ambient.enabled then LightingEffects.SetAmbient(true, LightingEffects.AmbientPresets[opt]) end
+    end
+})
+
+VisualTab:AddSection("Atmosphere")
+VisualControls.AtmosphereToggle = VisualTab:AddToggle("AtmosphereToggle", {
+    Title = "Enable Atmosphere", Default = false,
+    Callback = function(v) VisualState.Atmosphere.enabled = v; LightingEffects.SetAtmosphere(v, LightingEffects.AtmospherePresets[VisualState.Atmosphere.color], VisualState.Atmosphere.density) end
+})
+VisualControls.AtmosphereColorDropdown = VisualTab:AddDropdown("AtmosphereColorDropdown", {
+    Title = "Atmosphere Color",
+    Values = { "Purple", "Blue", "Red", "Green", "Orange", "Cyan", "Pink" },
+    Default = "Purple",
+    Callback = function(opt)
+        VisualState.Atmosphere.color = opt
+        if VisualState.Atmosphere.enabled then LightingEffects.SetAtmosphere(true, LightingEffects.AtmospherePresets[opt], VisualState.Atmosphere.density) end
+    end
+})
+VisualControls.AtmosphereDensity = VisualTab:AddSlider("AtmosphereDensity", {
+    Title = "Density", Min = 0, Max = 1, Rounding = 2, Default = 0.3,
+    Callback = function(v)
+        VisualState.Atmosphere.density = v
+        if VisualState.Atmosphere.enabled then LightingEffects.SetAtmosphere(true, LightingEffects.AtmospherePresets[VisualState.Atmosphere.color], v) end
+    end
+})
+
+VisualTab:AddSection("Bloom")
+VisualControls.BloomToggle = VisualTab:AddToggle("BloomToggle", {
+    Title = "Enable Bloom", Default = false,
+    Callback = function(v) VisualState.Bloom.enabled = v; LightingEffects.SetBloom(v, VisualState.Bloom.intensity, 24, 0.8, 0.5) end
+})
+VisualControls.BloomIntensity = VisualTab:AddSlider("BloomIntensity", {
+    Title = "Bloom Intensity", Min = 0, Max = 5, Rounding = 1, Default = 1,
+    Callback = function(v)
+        VisualState.Bloom.intensity = v
+        if VisualState.Bloom.enabled then LightingEffects.SetBloom(true, v, 24, 0.8, 0.5) end
+    end
+})
+
+VisualTab:AddSection("Color Correction")
+VisualControls.ColorCorrectionToggle = VisualTab:AddToggle("ColorCorrectionToggle", {
+    Title = "Enable Color Correction", Default = false,
+    Callback = function(v) VisualState.ColorCorrection.enabled = v; LightingEffects.SetColorCorrection(v, 0, 0, VisualState.ColorCorrection.saturation, LightingEffects.TintPresets[VisualState.ColorCorrection.tint]) end
+})
+VisualControls.TintDropdown = VisualTab:AddDropdown("TintDropdown", {
+    Title = "Tint",
+    Values = { "Normal", "Warm", "Cool", "Sepia", "Vintage", "Cold", "Dramatic" },
+    Default = "Normal",
+    Callback = function(opt)
+        VisualState.ColorCorrection.tint = opt
+        if VisualState.ColorCorrection.enabled then LightingEffects.SetColorCorrection(true, 0, 0, VisualState.ColorCorrection.saturation, LightingEffects.TintPresets[opt]) end
+    end
+})
+VisualControls.Saturation = VisualTab:AddSlider("Saturation", {
+    Title = "Saturation", Min = -1, Max = 1, Rounding = 1, Default = 0,
+    Callback = function(v)
+        VisualState.ColorCorrection.saturation = v
+        if VisualState.ColorCorrection.enabled then LightingEffects.SetColorCorrection(true, 0, 0, v, LightingEffects.TintPresets[VisualState.ColorCorrection.tint]) end
+    end
+})
+
+VisualTab:AddSection("Sun Rays")
+VisualControls.SunRaysToggle = VisualTab:AddToggle("SunRaysToggle", {
+    Title = "Enable Sun Rays", Default = false,
+    Callback = function(v) VisualState.SunRays.enabled = v; LightingEffects.SetSunRays(v, 0.1, 0.1) end
+})
+
+VisualTab:AddSection("Field of View")
+VisualControls.FOVSlider = VisualTab:AddSlider("FOVSlider", {
+    Title = "FOV", Min = 30, Max = 120, Rounding = 0, Default = math.floor(FOVControl.GetDefault()),
+    Callback = function(v) VisualState.FOV = v; FOVControl.SetFOV(v) end
+})
+VisualTab:AddButton({
+    Title = "Reset FOV",
+    Callback = function() FOVControl.Reset(); VisualState.FOV = math.floor(FOVControl.GetDefault()); if VisualControls.FOVSlider then VisualControls.FOVSlider:SetValue(VisualState.FOV) end end
+})
+
+VisualTab:AddSection("Player Aura")
+VisualControls.AuraToggle = VisualTab:AddToggle("AuraToggle", {
+    Title = "Enable Player Aura", Default = false,
+    Callback = function(v) VisualState.Aura.enabled = v; PlayerAura.SetEnabled(v) end
+})
+VisualControls.AuraColorDropdown = VisualTab:AddDropdown("AuraColorDropdown", {
+    Title = "Aura Color",
+    Values = { "Purple", "Blue", "Pink", "Green", "Gold", "Red", "White", "Cyan" },
+    Default = "Purple",
+    Callback = function(opt) VisualState.Aura.color = opt; PlayerAura.SetColor(PlayerAura.ColorPresets[opt]) end
+})
+VisualControls.AuraCount = VisualTab:AddSlider("AuraCount", {
+    Title = "Aura Particle Count", Min = 4, Max = 150, Rounding = 0, Default = 40,
+    Callback = function(v) VisualState.Aura.count = v; PlayerAura.SetCount(v) end
+})
+VisualControls.AuraRadius = VisualTab:AddSlider("AuraRadius", {
+    Title = "Aura Orbit Radius", Min = 1, Max = 20, Rounding = 1, Default = 6,
+    Callback = function(v) VisualState.Aura.radius = v; PlayerAura.SetRadius(v) end
+})
+
+VisualTab:AddSection("Character Trail")
+VisualControls.TrailToggle = VisualTab:AddToggle("TrailToggle", {
+    Title = "Enable Trail", Default = false,
+    Callback = function(v) VisualState.Trail.enabled = v; TrailEffect.SetEnabled(v) end
+})
+VisualControls.TrailColorDropdown = VisualTab:AddDropdown("TrailColorDropdown", {
+    Title = "Trail Color",
+    Values = { "Purple-Blue", "Red-Orange", "Green-Cyan", "Pink-Gold", "White-Blue" },
+    Default = "Purple-Blue",
+    Callback = function(opt)
+        VisualState.Trail.color = opt
+        local c = TrailEffect.ColorPresets[opt]
+        TrailEffect.SetColors(c[1], c[2])
+    end
+})
+VisualControls.TrailLifetime = VisualTab:AddSlider("TrailLifetime", {
+    Title = "Trail Lifetime", Min = 0.1, Max = 2, Rounding = 1, Default = 0.5,
+    Callback = function(v) VisualState.Trail.lifetime = v; TrailEffect.SetLifetime(v) end
+})
+VisualControls.TrailWidth = VisualTab:AddSlider("TrailWidth", {
+    Title = "Trail Width", Min = 0.1, Max = 2, Rounding = 1, Default = 0.6,
+    Callback = function(v) VisualState.Trail.width = v; TrailEffect.SetWidth(v) end
+})
+
+VisualTab:AddSection("Jump / Land Circle")
+VisualControls.JumpCircleToggle = VisualTab:AddToggle("JumpCircleToggle", {
+    Title = "Enable Jump Circle", Default = false,
+    Callback = function(v) VisualState.JumpCircle.enabled = v; JumpCircle.SetJumpEnabled(v) end
+})
+VisualControls.LandCircleToggle = VisualTab:AddToggle("LandCircleToggle", {
+    Title = "Enable Land Circle", Default = false,
+    Callback = function(v) VisualState.JumpCircle.land = v; JumpCircle.SetLandEnabled(v) end
+})
+VisualControls.JumpCircleColorDropdown = VisualTab:AddDropdown("JumpCircleColorDropdown", {
+    Title = "Circle Color",
+    Values = { "Purple", "Blue", "Pink", "Green", "Gold", "Red", "White", "Cyan" },
+    Default = "Purple",
+    Callback = function(opt) VisualState.JumpCircle.color = opt; JumpCircle.SetColor(JumpCircle.ColorPresets[opt]) end
+})
+
+VisualTab:AddSection("Reset")
+VisualTab:AddButton({
+    Title = "Disable All Effects",
+    Callback = function()
+        LightingEffects.ResetAll()
+        PlayerAura.SetEnabled(false)
+        TrailEffect.SetEnabled(false)
+        JumpCircle.SetJumpEnabled(false)
+        JumpCircle.SetLandEnabled(false)
+        FOVControl.Reset()
+    end
+})
 
 local WebhookTab = Window:AddTab({Title = "WebHook", Icon = "rbxassetid://12465540157" })
 
@@ -1463,13 +2179,21 @@ end })
 
 local UpdateTab = Window:AddTab({Title = "Update Log", Icon = "rbxassetid://15567843390" })
 UpdateTab:AddSection("Version")
-UpdateTab:AddParagraph({Title = "Version", Content = "2.5" })
+UpdateTab:AddParagraph({Title = "Version", Content = "2.6" })
 UpdateTab:AddSection("Update Date")
-UpdateTab:AddParagraph({Title = "Update Date", Content = "19.06.2026" })
+UpdateTab:AddParagraph({Title = "Update Date", Content = "16.08.2026" })
 UpdateTab:AddSection("What's New")
-UpdateTab:AddParagraph({Title = "What's New v2.5", Content = "Walk Settings presets (None/Slow/Medium/Fast/Custom)\nAnti-duplicate GUI protection\nServer region with city\nSafe module loading\nAll functions have notifications" })
+UpdateTab:AddParagraph({Title = "What's New v2.6", Content = "Added Visual Effects:\nAmbient Light, Atmosphere, Bloom,\nColor Correction, Sun Rays, FOV\nPlayer Aura, Character Trail,\nJump / Land Circle\nFixed Macros (Camera Lock + Walking)" })
 UpdateTab:AddSection("Changelog")
 UpdateTab:AddParagraph({Title = "Changelog", Content = [[
+v2.6 (16.08.2026)
+- Added Visual Effects: Ambient Light, Atmosphere, Bloom, Color Correction, Sun Rays, FOV
+- Added Player Aura (particle rings around player)
+- Added Character Trail
+- Added Jump / Land Circle effects
+- Fixed Macros (Camera Lock + Walking)
+- Fixed Walk Preset detection on config load
+
 v2.5 (19.06.2026)
 - Walk Settings presets dropdown
 - Anti-duplicate GUI protection
@@ -1540,6 +2264,7 @@ local function loadDefault()
 
     pcall(function() Toggle_NotificationsEnabled:SetValue(Settings.NotificationsEnabled) end)
     pcall(function() Toggle_PotatoGraphics:SetValue(Settings.PotatoGraphics) end)
+    pcall(function() if Toggle_AutoRestoreCam then Toggle_AutoRestoreCam:SetValue(Settings.AutoRestoreCam) end end)
     pcall(function() if macroDropdown then macroDropdown:SetValue("None") end end)
     pcall(function() if walkPresetDropdown then walkPresetDropdown:SetValue("Medium") end end)
     pcall(function() if walkChanceSlider then walkChanceSlider:SetValue(Settings.WalkChance) end end)
@@ -1548,21 +2273,56 @@ local function loadDefault()
     pcall(function() if moveMaxSlider then moveMaxSlider:SetValue(Settings.MoveDurationMax) end end)
     pcall(function() if pauseMinSlider then pauseMinSlider:SetValue(Settings.PauseMin) end end)
     pcall(function() if pauseMaxSlider then pauseMaxSlider:SetValue(Settings.PauseMax) end end)
+    pcall(function() if Toggle_AutoRestoreCam then Toggle_AutoRestoreCam:SetValue(Settings.AutoRestoreCam) end end)
     applyInstantProxMount("restore")
     savedPosition = nil
     savedCoordsText = "(None)"
     setButtonText(teleportButton, "Teleport to Position (None)")
+    savedCamPos = nil
+    savedCamText = "(None)"
+    pcall(function() camTeleportButton:SetTitle("Save Camera Position (None)") end)
     updateMatchFieldsText()
     for _, field in ipairs(fieldsList) do
         if fieldToggles[field] then
             fieldToggles[field]:SetValue(true)
         end
     end
+
+    pcall(function()
+        LightingEffects.ResetAll()
+        PlayerAura.SetEnabled(false)
+        TrailEffect.SetEnabled(false)
+        JumpCircle.SetJumpEnabled(false)
+        JumpCircle.SetLandEnabled(false)
+        FOVControl.Reset()
+        VisualState = {
+            Ambient = { enabled = false, color = "Purple" },
+            Atmosphere = { enabled = false, color = "Purple", density = 0.3 },
+            Bloom = { enabled = false, intensity = 1 },
+            ColorCorrection = { enabled = false, saturation = 0, tint = "Normal" },
+            SunRays = { enabled = false },
+            FOV = math.floor(FOVControl.GetDefault()),
+            Aura = { enabled = false, color = "Purple", count = 40, radius = 6 },
+            Trail = { enabled = false, color = "Purple-Blue", lifetime = 0.5, width = 0.6 },
+            JumpCircle = { enabled = false, land = false, color = "Purple" },
+        }
+        if VisualControls.AmbientToggle then VisualControls.AmbientToggle:SetValue(false) end
+        if VisualControls.AtmosphereToggle then VisualControls.AtmosphereToggle:SetValue(false) end
+        if VisualControls.BloomToggle then VisualControls.BloomToggle:SetValue(false) end
+        if VisualControls.ColorCorrectionToggle then VisualControls.ColorCorrectionToggle:SetValue(false) end
+        if VisualControls.SunRaysToggle then VisualControls.SunRaysToggle:SetValue(false) end
+        if VisualControls.FOVSlider then VisualControls.FOVSlider:SetValue(VisualState.FOV) end
+        if VisualControls.AuraToggle then VisualControls.AuraToggle:SetValue(false) end
+        if VisualControls.TrailToggle then VisualControls.TrailToggle:SetValue(false) end
+        if VisualControls.JumpCircleToggle then VisualControls.JumpCircleToggle:SetValue(false) end
+        if VisualControls.LandCircleToggle then VisualControls.LandCircleToggle:SetValue(false) end
+    end)
 end
 
 local function saveConfig(name)
     if not name or name == "" or name == "default" then return end
     local hrp = getHRP()
+    local cam = workspace.CurrentCamera
     local data = {
         ShowAllTowers = Settings.ShowAllTowers,
         BlackMarket = Settings.BlackMarket,
@@ -1586,17 +2346,31 @@ local function saveConfig(name)
         MoveDurationMax = Settings.MoveDurationMax,
         PauseMin = Settings.PauseMin,
         PauseMax = Settings.PauseMax,
-        SavedPosition = hrp and { X = hrp.Position.X, Y = hrp.Position.Y, Z = hrp.Position.Z } or nil
+        SavedPosition = hrp and { X = hrp.Position.X, Y = hrp.Position.Y, Z = hrp.Position.Z } or nil,
+        SavedCamera = savedCamPos and { savedCamPos:GetComponents() } or nil,
+        AutoRestoreCam = Settings.AutoRestoreCam,
+        Visual = VisualState,
     }
     writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
 end
 
+local function configExists(name)
+    if isfile(CONFIG_FOLDER.."/"..name..".json") then return true end
+    local ok, files = pcall(function() return listfiles(CONFIG_FOLDER) end)
+    if ok and files then
+        for _, file in ipairs(files) do
+            if tostring(file):match("([^\\/]+)%.json$") == name then return true end
+        end
+    end
+    return false
+end
+
 local function loadConfig(name)
-    if name == "default" then loadDefault(); return end
+    if name == "default" then loadDefault(); return true end
     local path = CONFIG_FOLDER.."/"..name..".json"
-    if not isfile(path) then return end
+    if not configExists(name) then return false end
     local ok, data = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
-    if not ok or not data then notifyUser("Config", "Failed to load config: " .. name, 3); return end
+    if not ok or not data then notifyUser("Config", "Failed to load config: " .. name, 3); return false end
     Settings.ShowAllTowers = data.ShowAllTowers or false
     Settings.BlackMarket = data.BlackMarket or false
 
@@ -1646,9 +2420,9 @@ local function loadConfig(name)
     pcall(function()
     if walkPresetDropdown then
         local preset = "Custom"
-        if Settings.WalkChance == 40 and Settings.JumpChance == 15 then preset = "Medium"
-        elseif Settings.WalkChance == 70 and Settings.JumpChance == 5 then preset = "Slow"
-        elseif Settings.WalkChance == 20 and Settings.JumpChance == 30 then preset = "Fast"
+        if Settings.WalkChance == 40 and Settings.JumpChance == 15 and Settings.MoveDurationMin == 0.8 and Settings.MoveDurationMax == 2.5 and Settings.PauseMin == 0.05 and Settings.PauseMax == 0.3 then preset = "Medium"
+        elseif Settings.WalkChance == 25 and Settings.JumpChance == 10 then preset = "Slow"
+        elseif Settings.WalkChance == 60 and Settings.JumpChance == 25 then preset = "Fast"
         end
         walkPresetDropdown:SetValue(preset)
     end
@@ -1686,10 +2460,125 @@ local function loadConfig(name)
         savedPosition = nil
         pcall(function() setButtonText(teleportButton, "Teleport to Position (None)") end)
     end
+
+    if data.SavedCamera then
+        savedCamPos = CFrame.new(table.unpack(data.SavedCamera))
+        local x,y,z = math.floor(savedCamPos.Position.X), math.floor(savedCamPos.Position.Y), math.floor(savedCamPos.Position.Z)
+        pcall(function() camTeleportButton:SetTitle("Save Camera Position ("..x..","..y..","..z..")") end)
+    else
+        savedCamPos = nil
+        pcall(function() camTeleportButton:SetTitle("Save Camera Position (None)") end)
+    end
+
+    pcall(function()
+        local cam = workspace.CurrentCamera
+        if savedCamPos and cam then
+            cam.CFrame = savedCamPos
+            if camConn then lockedCF = savedCamPos end
+        end
+    end)
+
+    if data.AutoRestoreCam ~= nil then Settings.AutoRestoreCam = data.AutoRestoreCam end
+
+    if data.Visual then
+        pcall(function()
+            local v = data.Visual
+            if v.Ambient then
+                VisualState.Ambient.enabled = v.Ambient.enabled or false
+                VisualState.Ambient.color = v.Ambient.color or "Purple"
+                if VisualControls.AmbientColorDropdown then VisualControls.AmbientColorDropdown:SetValue(VisualState.Ambient.color) end
+                if VisualControls.AmbientToggle then VisualControls.AmbientToggle:SetValue(VisualState.Ambient.enabled) end
+            end
+            if v.Atmosphere then
+                VisualState.Atmosphere.enabled = v.Atmosphere.enabled or false
+                VisualState.Atmosphere.color = v.Atmosphere.color or "Purple"
+                VisualState.Atmosphere.density = v.Atmosphere.density or 0.3
+                if VisualControls.AtmosphereColorDropdown then VisualControls.AtmosphereColorDropdown:SetValue(VisualState.Atmosphere.color) end
+                if VisualControls.AtmosphereDensity then VisualControls.AtmosphereDensity:SetValue(VisualState.Atmosphere.density) end
+                if VisualControls.AtmosphereToggle then VisualControls.AtmosphereToggle:SetValue(VisualState.Atmosphere.enabled) end
+            end
+            if v.Bloom then
+                VisualState.Bloom.enabled = v.Bloom.enabled or false
+                VisualState.Bloom.intensity = v.Bloom.intensity or 1
+                if VisualControls.BloomIntensity then VisualControls.BloomIntensity:SetValue(VisualState.Bloom.intensity) end
+                if VisualControls.BloomToggle then VisualControls.BloomToggle:SetValue(VisualState.Bloom.enabled) end
+            end
+            if v.ColorCorrection then
+                VisualState.ColorCorrection.enabled = v.ColorCorrection.enabled or false
+                VisualState.ColorCorrection.saturation = v.ColorCorrection.saturation or 0
+                VisualState.ColorCorrection.tint = v.ColorCorrection.tint or "Normal"
+                if VisualControls.Saturation then VisualControls.Saturation:SetValue(VisualState.ColorCorrection.saturation) end
+                if VisualControls.TintDropdown then VisualControls.TintDropdown:SetValue(VisualState.ColorCorrection.tint) end
+                if VisualControls.ColorCorrectionToggle then VisualControls.ColorCorrectionToggle:SetValue(VisualState.ColorCorrection.enabled) end
+            end
+            if v.SunRays then
+                VisualState.SunRays.enabled = v.SunRays.enabled or false
+                if VisualControls.SunRaysToggle then VisualControls.SunRaysToggle:SetValue(VisualState.SunRays.enabled) end
+            end
+            if v.FOV then
+                VisualState.FOV = v.FOV
+                if VisualControls.FOVSlider then VisualControls.FOVSlider:SetValue(VisualState.FOV) end
+            end
+            if v.Aura then
+                VisualState.Aura.enabled = v.Aura.enabled or false
+                VisualState.Aura.color = v.Aura.color or "Purple"
+                VisualState.Aura.count = v.Aura.count or 40
+                VisualState.Aura.radius = v.Aura.radius or 6
+                if VisualControls.AuraColorDropdown then VisualControls.AuraColorDropdown:SetValue(VisualState.Aura.color) end
+                if VisualControls.AuraCount then VisualControls.AuraCount:SetValue(VisualState.Aura.count) end
+                if VisualControls.AuraRadius then VisualControls.AuraRadius:SetValue(VisualState.Aura.radius) end
+                if VisualControls.AuraToggle then VisualControls.AuraToggle:SetValue(VisualState.Aura.enabled) end
+            end
+            if v.Trail then
+                VisualState.Trail.enabled = v.Trail.enabled or false
+                VisualState.Trail.color = v.Trail.color or "Purple-Blue"
+                VisualState.Trail.lifetime = v.Trail.lifetime or 0.5
+                VisualState.Trail.width = v.Trail.width or 0.6
+                if VisualControls.TrailColorDropdown then VisualControls.TrailColorDropdown:SetValue(VisualState.Trail.color) end
+                if VisualControls.TrailLifetime then VisualControls.TrailLifetime:SetValue(VisualState.Trail.lifetime) end
+                if VisualControls.TrailWidth then VisualControls.TrailWidth:SetValue(VisualState.Trail.width) end
+                if VisualControls.TrailToggle then VisualControls.TrailToggle:SetValue(VisualState.Trail.enabled) end
+            end
+            if v.JumpCircle then
+                VisualState.JumpCircle.enabled = v.JumpCircle.enabled or false
+                VisualState.JumpCircle.land = v.JumpCircle.land or false
+                VisualState.JumpCircle.color = v.JumpCircle.color or "Purple"
+                if VisualControls.JumpCircleColorDropdown then VisualControls.JumpCircleColorDropdown:SetValue(VisualState.JumpCircle.color) end
+                if VisualControls.LandCircleToggle then VisualControls.LandCircleToggle:SetValue(VisualState.JumpCircle.land) end
+                if VisualControls.JumpCircleToggle then VisualControls.JumpCircleToggle:SetValue(VisualState.JumpCircle.enabled) end
+            end
+        end)
+    end
+    return true
 end
 
-local function AutoSave() if not Settings.AutoSaveEnabled then return end; if currentConfig ~= "default" then saveConfig(currentConfig); writefile(LAST_CONFIG_FILE, currentConfig) end end
-local function AutoLoad() if not Settings.AutoLoadEnabled then return end; if isfile(LAST_CONFIG_FILE) then local last = readfile(LAST_CONFIG_FILE); if last and last ~= "" then currentConfig = last; loadConfig(last); return end end; currentConfig = "default"; loadConfig("default") end
+local function rememberLastConfig(name)
+    if name and name ~= "" and name ~= "default" then
+        pcall(function() writefile(LAST_CONFIG_FILE, name) end)
+    end
+end
+
+local function AutoSave()
+    if currentConfig ~= "default" then
+        if Settings.AutoSaveEnabled then saveConfig(currentConfig) end
+        rememberLastConfig(currentConfig)
+    end
+end
+local function AutoLoad()
+    if not Settings.AutoLoadEnabled then return end
+    if isfile(LAST_CONFIG_FILE) then
+        local last = readfile(LAST_CONFIG_FILE)
+        if last and last ~= "" then
+            local ok, result = pcall(function() return loadConfig(last) end)
+            if ok and result then
+                currentConfig = last
+                return
+            end
+        end
+    end
+    currentConfig = "default"
+    loadConfig("default")
+end
 
 local ConfigTab = Window:AddTab({Title = "Config", Icon = "rbxassetid://11956055886" })
 local selectedLabel = ConfigTab:AddParagraph({Title = "Selected Config", Content = "default" })
@@ -1699,7 +2588,7 @@ local configDropdown = ConfigTab:AddDropdown("Configs", {
     Title = "Configs",
     Values = {"default"},
     Default = "default",
-    Callback = function(opt) currentConfig = opt; updateSelected(); loadConfig(currentConfig) end 
+    Callback = function(opt) currentConfig = opt; rememberLastConfig(opt); updateSelected(); loadConfig(currentConfig) end 
 })
 
 local function refreshDropdown()
@@ -1715,10 +2604,10 @@ refreshDropdown()
 
 local inputName = ""
 ConfigTab:AddInput("ConfigName", {Title = "Config Name", Placeholder = "Enter name...", Default = "", Callback = function(text) inputName = text end })
-ConfigTab:AddButton({Title ="Create", Callback = function() if inputName=="" or inputName=="default" then return end; currentConfig = inputName; if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then saveConfig(inputName) end; refreshDropdown(); updateSelected() end })
+ConfigTab:AddButton({Title ="Create", Callback = function() if inputName=="" or inputName=="default" then return end; currentConfig = inputName; rememberLastConfig(inputName); if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then saveConfig(inputName) end; refreshDropdown(); updateSelected() end })
 ConfigTab:AddButton({Title ="Save", Callback = function() if not currentConfig then return end; saveConfig(currentConfig); AutoSave(); refreshDropdown() end })
 ConfigTab:AddButton({Title ="Load", Callback = function() if not currentConfig then return end; loadConfig(currentConfig) end })
-ConfigTab:AddButton({Title ="Delete", Callback = function() if currentConfig=="default" then return end; local path = CONFIG_FOLDER.."/"..currentConfig..".json"; if isfile(path) then delfile(path) end; currentConfig="default"; loadDefault(); refreshDropdown(); updateSelected() end })
+ConfigTab:AddButton({Title ="Delete", Callback = function() if currentConfig=="default" then return end; local path = CONFIG_FOLDER.."/"..currentConfig..".json"; if isfile(path) then delfile(path) end; if isfile(LAST_CONFIG_FILE) and readfile(LAST_CONFIG_FILE) == currentConfig then delfile(LAST_CONFIG_FILE) end; currentConfig="default"; loadDefault(); refreshDropdown(); updateSelected() end })
 ConfigTab:AddToggle("AutoLoad", {Title = "Auto Load", Default = Settings.AutoLoadEnabled, Callback = function(v) Settings.AutoLoadEnabled=v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 ConfigTab:AddToggle("AutoSave", {Title = "Auto Save", Default = Settings.AutoSaveEnabled, Callback = function(v) Settings.AutoSaveEnabled=v; if v and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 
@@ -1726,10 +2615,18 @@ task.spawn(function()
     task.wait(1)
     AutoLoad()
     updateSelected()
+    refreshDropdown()
+    task.wait(1)
+    pcall(function()
+        if Settings.AutoRestoreCam and savedCamPos and workspace.CurrentCamera then
+            workspace.CurrentCamera.CFrame = savedCamPos
+            if camConn and Settings.AntiMacro then lockedCF = savedCamPos end
+        end
+    end)
 end)
 task.spawn(function() while true do task.wait(20); AutoSave() end end)
 
-notifyUser("Skibidi Defense", "v2.5 loaded! (Fluent UI)", 3)
-print("[Loader] Skibidi Defense v2.5 loaded successfully!")
+notifyUser("Skibidi Defense", "v2.6 loaded! (Fluent UI)", 3)
+print("[Loader] Skibidi Defense v2.6 loaded successfully!")
 
 pcall(function() Window:SelectTab(1) end)
