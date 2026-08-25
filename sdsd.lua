@@ -973,9 +973,15 @@ do
         end
     end
 
-    function Macro.UpdateCount()
+    function Macro.UpdateCount(current)
         if Macro.Count then
-            pcall(function() Macro.Count:SetDesc(tostring(#Macro.Data)) end)
+            pcall(function()
+                if current then
+                    Macro.Count:SetDesc(string.format("%d/%d", #Macro.Data, current))
+                else
+                    Macro.Count:SetDesc(string.format("%d/0", #Macro.Data))
+                end
+            end)
         end
     end
 
@@ -1065,6 +1071,19 @@ do
                 hum.Jump = true
                 hum:ChangeState(Enum.HumanoidStateType.Jumping)
             end
+        elseif key == Enum.KeyCode.One
+            or key == Enum.KeyCode.Two
+            or key == Enum.KeyCode.Three
+            or key == Enum.KeyCode.Four
+            or key == Enum.KeyCode.Five
+            or key == Enum.KeyCode.Six
+            or key == Enum.KeyCode.Seven
+            or key == Enum.KeyCode.Eight
+            or key == Enum.KeyCode.Nine
+            or key == Enum.KeyCode.Zero then
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(state == "Began", key, false, game)
+            end)
         else
             pcall(function()
                 VirtualInputManager:SendKeyEvent(state == "Began", key, false, game)
@@ -1157,17 +1176,49 @@ do
     end
 
     -- ОТПРАВКА КЛИКА
+    local function TryFireGuiButton(x, y)
+        local ok, guiObjects = pcall(function()
+            return PlayerGui:GetGuiObjectsAtPosition(x, y)
+        end)
+        if not ok or not guiObjects then return false end
+
+        for _, obj in ipairs(guiObjects) do
+            if obj:IsA("GuiButton") and obj.Visible and obj.Active then
+                if type(firesignal) ~= "function" then
+                    return false
+                end
+
+                local fired = false
+                pcall(function()
+                    firesignal(obj.MouseButton1Click)
+                    fired = true
+                end)
+                pcall(function()
+                    firesignal(obj.Activated)
+                end)
+                return fired
+            end
+        end
+        return false
+    end
+
     local function SendRecordedMouse(Action)
         local x = tonumber(Action.X) or 0
         local y = tonumber(Action.Y) or 0
 
+        -- Сначала пробуем 2D GUI — кнопки интерфейса и TopbarPlus.
+        if Action.State == "Began" and TryFireGuiButton(x, y) then
+            return
+        end
+
         if Settings.MacroCompensateInset then
             pcall(function()
                 local inset = GuiService:GetGuiInset()
-                y = y - inset.Y
+                y = y + inset.Y
             end)
         end
 
+        -- Затем ClickDetector.
         local detector = GetClickDetectorAt(x, y)
         if detector then
             if Action.State == "Began" then
@@ -1176,6 +1227,7 @@ do
             return
         end
 
+        -- Последний fallback — VirtualInputManager.
         pcall(function()
             local button = Action.Key == Enum.UserInputType.MouseButton2 and 1 or 0
             local pressed = Action.State == "Began"
@@ -1210,8 +1262,9 @@ do
                 Macro.HeldKeys.S = false
                 Macro.HeldKeys.D = false
 
-                for _, Action in ipairs(Macro.Data) do
+                for index, Action in ipairs(Macro.Data) do
                     if not Macro.Playing then break end
+                    Macro.UpdateCount(index)
                     local PreviousTime = _PreviousMacroTime or 0
                     local Delay = math.max(0, Action.Time - PreviousTime)
                     _PreviousMacroTime = Action.Time
@@ -1393,6 +1446,26 @@ do
     end
 
     -- НАСТРОЙКА ВВОДА
+    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+    local function IsClickOnOwnUI(x, y)
+        local ok, guiObjects = pcall(function()
+            return PlayerGui:GetGuiObjectsAtPosition(x, y)
+        end)
+        if not ok or not guiObjects then return false end
+
+        local root = Window and Window.Root
+        if not root then return false end
+
+        for _, obj in ipairs(guiObjects) do
+            local okCheck, result = pcall(function()
+                return obj:IsDescendantOf(root)
+            end)
+            if okCheck and result then return true end
+        end
+        return false
+    end
+
     function Macro.SetupInput()
         if inputBeganConn then inputBeganConn:Disconnect() end
         if inputEndedConn then inputEndedConn:Disconnect() end
@@ -1419,54 +1492,64 @@ do
                 return
             end
 
-            if gameProcessed or not Macro.Recording then return end
+            if not Macro.Recording then return end
 
             if input.UserInputType == Enum.UserInputType.Keyboard then
-                AddEvent({
-                    Type = "Keyboard",
-                    Key = input.KeyCode,
-                    State = "Began"
-                })
-                if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = true
-                elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = true
-                elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = true
-                elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = true end
+                -- Не записываем клавиатуру, если игра/поле ввода уже обработали её.
+                if not gameProcessed then
+                    AddEvent({
+                        Type = "Keyboard",
+                        Key = input.KeyCode,
+                        State = "Began"
+                    })
+                    if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = true
+                    elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = true
+                    elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = true
+                    elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = true end
+                end
 
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2 then
-                AddEvent({
-                    Type = "Mouse",
-                    Key = input.UserInputType,
-                    State = "Began",
-                    X = input.Position.X,
-                    Y = input.Position.Y
-                })
+                -- Клики записываем даже при gameProcessed, но не клики по нашей панели.
+                if not IsClickOnOwnUI(input.Position.X, input.Position.Y) then
+                    AddEvent({
+                        Type = "Mouse",
+                        Key = input.UserInputType,
+                        State = "Began",
+                        X = input.Position.X,
+                        Y = input.Position.Y
+                    })
+                end
             end
         end)
 
         inputEndedConn = UserInputService.InputEnded:Connect(function(input, gameProcessed)
-            if gameProcessed or not Macro.Recording then return end
+            if not Macro.Recording then return end
 
             if input.UserInputType == Enum.UserInputType.Keyboard then
-                AddEvent({
-                    Type = "Keyboard",
-                    Key = input.KeyCode,
-                    State = "Ended"
-                })
-                if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = false
-                elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = false
-                elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = false
-                elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = false end
+                if not gameProcessed then
+                    AddEvent({
+                        Type = "Keyboard",
+                        Key = input.KeyCode,
+                        State = "Ended"
+                    })
+                    if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = false
+                    elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = false
+                    elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = false
+                    elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = false end
+                end
 
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2 then
-                AddEvent({
-                    Type = "Mouse",
-                    Key = input.UserInputType,
-                    State = "Ended",
-                    X = input.Position.X,
-                    Y = input.Position.Y
-                })
+                if not IsClickOnOwnUI(input.Position.X, input.Position.Y) then
+                    AddEvent({
+                        Type = "Mouse",
+                        Key = input.UserInputType,
+                        State = "Ended",
+                        X = input.Position.X,
+                        Y = input.Position.Y
+                    })
+                end
             end
         end)
     end
@@ -2547,6 +2630,47 @@ OtherTab:AddSection("Unload")
 -- Переменная для контроля AutoSave
 local autoSaveRunning = true
 
+local AutoLoadTeleportEnabled = true
+
+if typeof(getgenv) == "function" then
+    local env = getgenv()
+
+    if env.SkibidiAutoLoadTeleport ~= nil then
+        AutoLoadTeleportEnabled = env.SkibidiAutoLoadTeleport
+    end
+end
+
+local function SetupAutoLoadTeleport()
+    if typeof(queue_on_teleport) ~= "function" then
+        warn("queue_on_teleport не найден")
+        return
+    end
+
+    queue_on_teleport([[
+        task.wait(2)
+
+        local env = getgenv and getgenv()
+
+        if env and env.SkibidiAutoLoadTeleport == false then
+            return
+        end
+
+        pcall(function()
+            loadstring(game:HttpGet(
+                "https://raw.githubusercontent.com/MrAdiviKPlayYT/sdkasjdskfjasd/refs/heads/main/sdsadas.lua"
+            ))()
+        end)
+    ]])
+end
+
+if typeof(getgenv) == "function" then
+    getgenv().SkibidiAutoLoadTeleport = AutoLoadTeleportEnabled
+end
+
+if AutoLoadTeleportEnabled then
+    SetupAutoLoadTeleport()
+end
+
 OtherTab:AddButton({Title = "Unload Script", Callback = function()
     autoSaveRunning = false -- Останавливаем AutoSave
     
@@ -2923,6 +3047,7 @@ MacroRecorderTab:AddSection("Recording")
 
 Macro.Count = MacroRecorderTab:AddParagraph({ Title = "Events", Content = "0" })
 Macro.Status = MacroRecorderTab:AddParagraph({ Title = "Status", Content = "Ready.\n[ - record\n] - stop\n\\ - play / stop" })
+Macro.UpdateCount()
 
 MacroRecorderTab:AddButton({ Title = "Start Recording", Description = "[", Callback = function() Macro.StartRecording() end })
 MacroRecorderTab:AddButton({ Title = "Stop Recording", Description = "]", Callback = function() Macro.StopRecording() end })
