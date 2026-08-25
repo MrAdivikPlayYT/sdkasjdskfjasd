@@ -1343,13 +1343,131 @@ do
         return SaveFolder .. "/" .. name .. ".json"
     end
 
+    local function GetMacroAccountId()
+        return tostring(LocalPlayer.UserId)
+    end
+
+    local function NormalizeMacroIds(data)
+        local ids = {}
+        local seen = {}
+        if type(data) == "table" and type(data.IDs) == "table" then
+            for _, id in ipairs(data.IDs) do
+                id = tostring(id)
+                if id ~= "" and not seen[id] then
+                    seen[id] = true
+                    table.insert(ids, id)
+                end
+            end
+        end
+        return ids
+    end
+
+    local function ReadMacroFile(name)
+        if not name or name == "" then return nil end
+        local path = GetMacroPath(name)
+        local ok, data = pcall(function()
+            if not isfile(path) then return nil end
+            return HttpService:JSONDecode(readfile(path))
+        end)
+        if not ok or type(data) ~= "table" then return nil end
+        return data
+    end
+
+    local function WriteMacroFile(name, data)
+        if not name or name == "" or type(data) ~= "table" then return false end
+        local ok = pcall(function()
+            if not isfolder(SaveFolder) then makefolder(SaveFolder) end
+            writefile(GetMacroPath(name), HttpService:JSONEncode(data))
+        end)
+        return ok
+    end
+
+    local function BindMacroToCurrentAccount(name)
+        if not name or name == "" then return end
+        local accountId = GetMacroAccountId()
+        local okFiles, files = pcall(function() return listfiles(SaveFolder) end)
+        if not okFiles or not files then return end
+
+        -- Один аккаунт может быть привязан только к одному макросу.
+        for _, file in ipairs(files) do
+            local otherName = tostring(file):match("([^\\/]+)%.json$")
+            if otherName and otherName ~= "settings" and otherName ~= name then
+                local data = ReadMacroFile(otherName)
+                if data and type(data) == "table" and type(data.IDs) == "table" then
+                    local ids = NormalizeMacroIds(data)
+                    local changed = false
+                    local newIds = {}
+                    for _, id in ipairs(ids) do
+                        if id == accountId then
+                            changed = true
+                        else
+                            table.insert(newIds, id)
+                        end
+                    end
+                    if changed then
+                        data.IDs = newIds
+                        WriteMacroFile(otherName, data)
+                    end
+                end
+            end
+        end
+
+        local data = ReadMacroFile(name)
+        if not data then return end
+
+        -- Старый формат массива событий автоматически превращаем в новый.
+        if data[1] ~= nil and data.Data == nil then
+            data = { Data = data, IDs = {} }
+        end
+
+        local ids = NormalizeMacroIds(data)
+        for _, id in ipairs(ids) do
+            if id == accountId then
+                data.IDs = ids
+                WriteMacroFile(name, data)
+                return
+            end
+        end
+        table.insert(ids, accountId)
+        data.IDs = ids
+        WriteMacroFile(name, data)
+    end
+
+    local function FindMacroForCurrentAccount()
+        local accountId = GetMacroAccountId()
+        local okFiles, files = pcall(function() return listfiles(SaveFolder) end)
+        if not okFiles or not files then return nil end
+
+        local matches = {}
+        for _, file in ipairs(files) do
+            local name = tostring(file):match("([^\\/]+)%.json$")
+            if name and name ~= "settings" then
+                local data = ReadMacroFile(name)
+                if data then
+                    for _, id in ipairs(NormalizeMacroIds(data)) do
+                        if id == accountId then
+                            table.insert(matches, name)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(matches)
+        return matches[1]
+    end
+
     function Macro.ListSaved()
         local names = {}
         local ok, files = pcall(function() return listfiles(SaveFolder) end)
         if ok and files then
             for _, file in ipairs(files) do
                 local name = tostring(file):match("([^\\/]+)%.json$")
-                if name then table.insert(names, name) end
+                -- Как и обычные конфиги, макросы остаются видимыми в списке.
+                -- IDs используются для автоматического выбора, а не для скрытия файла.
+                if name and name ~= "settings" then
+                    table.insert(names, name)
+                end
             end
         end
         table.sort(names)
@@ -1361,13 +1479,23 @@ do
             if not isfolder(SaveFolder) then makefolder(SaveFolder) end
             writefile(LastSelectedFile, name or "")
         end)
+        if name and name ~= "" then
+            pcall(function() BindMacroToCurrentAccount(name) end)
+        end
     end
 
     function Macro.GetLastSelected()
-        local ok, exists = pcall(function() return isfile(LastSelectedFile) end)
-        if not ok or not exists then return nil end
-        local okRead, content = pcall(function() return readfile(LastSelectedFile) end)
-        if okRead and content and content ~= "" then return content end
+        -- ВАЖНО ДЛЯ МУЛЬТИ-АККАУНТОВ:
+        -- сначала ищем макрос по Roblox UserId.
+        local accountMacro = FindMacroForCurrentAccount()
+        if accountMacro then
+            return accountMacro
+        end
+
+        -- Если текущий UserId ещё ни к одному макросу не привязан,
+        -- НЕ используем общий _last_selected.txt.
+        -- Иначе второй аккаунт мог бы случайно получить макрос
+        -- первого аккаунта.
         return nil
     end
 
@@ -1386,10 +1514,24 @@ do
         end
         local ok, err = pcall(function()
             if not isfolder(SaveFolder) then makefolder(SaveFolder) end
-            local json = HttpService:JSONEncode(SerializeMacro())
-            writefile(GetMacroPath(name), json)
+
+            local existing = ReadMacroFile(name)
+            local ids = NormalizeMacroIds(existing)
+            local accountId = GetMacroAccountId()
+            local hasCurrent = false
+            for _, id in ipairs(ids) do
+                if id == accountId then hasCurrent = true break end
+            end
+            if not hasCurrent then table.insert(ids, accountId) end
+
+            local payload = {
+                IDs = ids,
+                Data = SerializeMacro()
+            }
+            writefile(GetMacroPath(name), HttpService:JSONEncode(payload))
         end)
         if ok then
+            pcall(function() BindMacroToCurrentAccount(name) end)
             Macro.SetStatus("Macro saved as \"" .. name .. "\" (" .. #Macro.Data .. " events).")
             notifyUser("Macro Recorder", "Saved as \"" .. name .. "\" (" .. #Macro.Data .. " events).", 2)
         else
@@ -1412,8 +1554,16 @@ do
         end
         local okLoad, result = pcall(function()
             local json = readfile(path)
-            local data = HttpService:JSONDecode(json)
-            return DeserializeMacro(data)
+            local raw = HttpService:JSONDecode(json)
+            -- Поддержка старого формата: JSON-массив событий.
+            if type(raw) == "table" and raw.Data == nil and raw[1] ~= nil then
+                return DeserializeMacro(raw)
+            end
+            -- Новый формат: IDs + Data.
+            if type(raw) == "table" and type(raw.Data) == "table" then
+                return DeserializeMacro(raw.Data)
+            end
+            error("Invalid macro format")
         end)
         if okLoad and result then
             Macro.Data = result
@@ -3275,6 +3425,122 @@ local function loadDefault()
     pcall(function() Macro.StartMovement() end)
 end
 
+local function getCurrentAccountId()
+    return tostring(LocalPlayer.UserId)
+end
+
+-- Привязка конфигурации к Roblox UserId.
+-- Один конфиг может принадлежать нескольким аккаунтам, но один аккаунт
+-- всегда привязывается только к одному конфигу.
+local function readConfigData(name)
+    if not name or name == "" or name == "default" then return nil end
+    local path = CONFIG_FOLDER.."/"..name..".json"
+    local ok, data = pcall(function()
+        if not isfile(path) then return nil end
+        return HttpService:JSONDecode(readfile(path))
+    end)
+    if ok and type(data) == "table" then return data end
+    return nil
+end
+
+local function writeConfigData(name, data)
+    if not name or name == "" or name == "default" or type(data) ~= "table" then return false end
+    local path = CONFIG_FOLDER.."/"..name..".json"
+    local ok = pcall(function()
+        if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
+        writefile(path, HttpService:JSONEncode(data))
+    end)
+    return ok
+end
+
+local function normalizeConfigIds(data)
+    local ids = {}
+    local seen = {}
+    if type(data) == "table" and type(data.IDs) == "table" then
+        for _, id in ipairs(data.IDs) do
+            id = tostring(id)
+            if id ~= "" and not seen[id] then
+                seen[id] = true
+                table.insert(ids, id)
+            end
+        end
+    end
+    return ids
+end
+
+local function setAccountConfigBinding(name)
+    if not name or name == "" or name == "default" then return end
+
+    local accountId = getCurrentAccountId()
+    local okFiles, files = pcall(function() return listfiles(CONFIG_FOLDER) end)
+    if not okFiles or not files then return end
+
+    -- Сначала убираем текущий аккаунт из всех других конфигов,
+    -- чтобы он никогда не был привязан сразу к двум конфигам.
+    for _, file in ipairs(files) do
+        local otherName = tostring(file):match("([^\\/]+)%.json$")
+        if otherName and otherName ~= name then
+            local data = readConfigData(otherName)
+            if data then
+                local oldIds = normalizeConfigIds(data)
+                local newIds = {}
+                local changed = false
+                for _, id in ipairs(oldIds) do
+                    if id == accountId then
+                        changed = true
+                    else
+                        table.insert(newIds, id)
+                    end
+                end
+                if changed then
+                    data.IDs = newIds
+                    writeConfigData(otherName, data)
+                end
+            end
+        end
+    end
+
+    local data = readConfigData(name)
+    if not data then return end
+
+    local ids = normalizeConfigIds(data)
+    for _, id in ipairs(ids) do
+        if id == accountId then
+            data.IDs = ids
+            return
+        end
+    end
+
+    table.insert(ids, accountId)
+    data.IDs = ids
+    writeConfigData(name, data)
+end
+
+local function findConfigForCurrentAccount()
+    local accountId = getCurrentAccountId()
+    local okFiles, files = pcall(function() return listfiles(CONFIG_FOLDER) end)
+    if not okFiles or not files then return nil end
+
+    local matches = {}
+    for _, file in ipairs(files) do
+        local name = tostring(file):match("([^\\/]+)%.json$")
+        if name and name ~= "default" then
+            local data = readConfigData(name)
+            if data then
+                for _, id in ipairs(normalizeConfigIds(data)) do
+                    if id == accountId then
+                        table.insert(matches, name)
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(matches)
+    return matches[1]
+end
+
 local function saveConfig(name)
     if not name or name == "" or name == "default" then return end
     local hrp = getHRP()
@@ -3313,6 +3579,21 @@ local function saveConfig(name)
         MacroAutoStartDelay = Settings.MacroAutoStartDelay,
         Visual = VisualState,
     }
+
+    -- Сохраняем уже привязанные аккаунты и добавляем текущий UserId.
+    local existing = readConfigData(name)
+    local ids = normalizeConfigIds(existing)
+    local currentId = getCurrentAccountId()
+    local hasCurrent = false
+    for _, id in ipairs(ids) do
+        if id == currentId then
+            hasCurrent = true
+            break
+        end
+    end
+    if not hasCurrent then table.insert(ids, currentId) end
+    data.IDs = ids
+
     writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
 end
 
@@ -3544,16 +3825,32 @@ end
 
 local function AutoLoad()
     if not Settings.AutoLoadEnabled then return end
+
+    -- Сначала ищем конфиг, привязанный именно к текущему Roblox UserId.
+    -- Это имеет приоритет над старым общим last.txt.
+    local accountConfig = findConfigForCurrentAccount()
+    if accountConfig then
+        local ok, result = pcall(function() return loadConfig(accountConfig) end)
+        if ok and result then
+            currentConfig = accountConfig
+            rememberLastConfig(accountConfig)
+            return
+        end
+    end
+
+    -- Совместимость со старыми конфигами без IDs.
     if isfile(LAST_CONFIG_FILE) then
         local last = readfile(LAST_CONFIG_FILE)
         if last and last ~= "" then
             local ok, result = pcall(function() return loadConfig(last) end)
             if ok and result then
                 currentConfig = last
+                pcall(function() setAccountConfigBinding(last) end)
                 return
             end
         end
     end
+
     currentConfig = "default"
     loadConfig("default")
 end
@@ -3566,7 +3863,15 @@ local configDropdown = ConfigTab:AddDropdown("Configs", {
     Title = "Configs",
     Values = {"default"},
     Default = "default",
-    Callback = function(opt) currentConfig = opt; rememberLastConfig(opt); updateSelected(); loadConfig(currentConfig) end 
+    Callback = function(opt)
+        currentConfig = opt
+        if opt ~= "default" then
+            pcall(function() setAccountConfigBinding(opt) end)
+        end
+        rememberLastConfig(opt)
+        updateSelected()
+        loadConfig(currentConfig)
+    end 
 })
 
 local function refreshDropdown()
@@ -3582,9 +3887,38 @@ refreshDropdown()
 
 local inputName = ""
 ConfigTab:AddInput("ConfigName", {Title = "Config Name", Placeholder = "Enter name...", Default = "", Callback = function(text) inputName = text end })
-ConfigTab:AddButton({Title ="Create", Callback = function() if inputName=="" or inputName=="default" then return end; currentConfig = inputName; rememberLastConfig(inputName); if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then saveConfig(inputName) end; refreshDropdown(); updateSelected() end })
-ConfigTab:AddButton({Title ="Save", Callback = function() if not currentConfig then return end; saveConfig(currentConfig); AutoSave(); refreshDropdown() end })
-ConfigTab:AddButton({Title ="Load", Callback = function() if not currentConfig then return end; loadConfig(currentConfig) end })
+ConfigTab:AddButton({Title ="Create", Callback = function()
+    if inputName=="" or inputName=="default" then return end
+
+    currentConfig = inputName
+
+    -- Создание нового обычного конфига или выбор уже существующего.
+    -- Текущий Roblox UserId добавляется в IDs, поэтому один конфиг
+    -- можно использовать несколькими аккаунтами.
+    if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then
+        saveConfig(inputName)
+    end
+
+    pcall(function() setAccountConfigBinding(inputName) end)
+    rememberLastConfig(inputName)
+    refreshDropdown()
+    updateSelected()
+end })
+ConfigTab:AddButton({Title ="Save", Callback = function()
+    if not currentConfig then return end
+    if currentConfig ~= "default" then pcall(function() setAccountConfigBinding(currentConfig) end) end
+    saveConfig(currentConfig)
+    AutoSave()
+    refreshDropdown()
+end })
+ConfigTab:AddButton({Title ="Load", Callback = function()
+    if not currentConfig then return end
+    if currentConfig ~= "default" then
+        pcall(function() setAccountConfigBinding(currentConfig) end)
+    end
+    loadConfig(currentConfig)
+    rememberLastConfig(currentConfig)
+end })
 ConfigTab:AddButton({Title ="Delete", Callback = function() if currentConfig=="default" then return end; local path = CONFIG_FOLDER.."/"..currentConfig..".json"; if isfile(path) then delfile(path) end; if isfile(LAST_CONFIG_FILE) and readfile(LAST_CONFIG_FILE) == currentConfig then delfile(LAST_CONFIG_FILE) end; currentConfig="default"; loadDefault(); refreshDropdown(); updateSelected() end })
 ConfigTab:AddToggle("AutoLoad", {Title = "Auto Load", Default = Settings.AutoLoadEnabled, Callback = function(v) Settings.AutoLoadEnabled=v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 ConfigTab:AddToggle("AutoSave", {Title = "Auto Save", Default = Settings.AutoSaveEnabled, Callback = function(v) Settings.AutoSaveEnabled=v; if v and currentConfig ~= "default" then saveConfig(currentConfig) end end })
