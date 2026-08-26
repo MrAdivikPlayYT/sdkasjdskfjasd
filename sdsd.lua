@@ -106,6 +106,9 @@ local Settings = {
     MacroModes = {},
     AutoRestoreCam = true,
     MacroLoop = false,
+    MacroAutoSave = false,
+    MacroAutoSaveInterval = 3,
+    MacroAutoSaveEnabled = false,
     MacroCompensateInset = false,
     MacroDebugClicks = true,
     MacroAutoLoadOnStart = true,
@@ -919,6 +922,18 @@ print("[Loader] All functions ready")
 -- MACRO RECORDER MODULE (ВЗЯТО ИЗ Macro.lua)
 -- ===========================================================
 local Macro = {}
+local macroNameInput = ""
+local MacroBinds = {
+    Record = Enum.KeyCode.LeftBracket,
+    Stop = Enum.KeyCode.RightBracket,
+    Play = Enum.KeyCode.BackSlash,
+    Save = Enum.KeyCode.F6,
+}
+
+local function macroBindText(key)
+    return key and key.Name or "Unknown"
+end
+
 do
     local SaveFolder = "MacroRecorderData"
     local LastSelectedFile = SaveFolder .. "/_last_selected.txt"
@@ -973,15 +988,9 @@ do
         end
     end
 
-    function Macro.UpdateCount(current)
+    function Macro.UpdateCount()
         if Macro.Count then
-            pcall(function()
-                if current then
-                    Macro.Count:SetDesc(string.format("%d/%d", #Macro.Data, current))
-                else
-                    Macro.Count:SetDesc(string.format("%d/0", #Macro.Data))
-                end
-            end)
+            pcall(function() Macro.Count:SetDesc(string.format("%d/%d", #Macro.Data, 0)) end)
         end
     end
 
@@ -1071,19 +1080,6 @@ do
                 hum.Jump = true
                 hum:ChangeState(Enum.HumanoidStateType.Jumping)
             end
-        elseif key == Enum.KeyCode.One
-            or key == Enum.KeyCode.Two
-            or key == Enum.KeyCode.Three
-            or key == Enum.KeyCode.Four
-            or key == Enum.KeyCode.Five
-            or key == Enum.KeyCode.Six
-            or key == Enum.KeyCode.Seven
-            or key == Enum.KeyCode.Eight
-            or key == Enum.KeyCode.Nine
-            or key == Enum.KeyCode.Zero then
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(state == "Began", key, false, game)
-            end)
         else
             pcall(function()
                 VirtualInputManager:SendKeyEvent(state == "Began", key, false, game)
@@ -1176,49 +1172,17 @@ do
     end
 
     -- ОТПРАВКА КЛИКА
-    local function TryFireGuiButton(x, y)
-        local ok, guiObjects = pcall(function()
-            return PlayerGui:GetGuiObjectsAtPosition(x, y)
-        end)
-        if not ok or not guiObjects then return false end
-
-        for _, obj in ipairs(guiObjects) do
-            if obj:IsA("GuiButton") and obj.Visible and obj.Active then
-                if type(firesignal) ~= "function" then
-                    return false
-                end
-
-                local fired = false
-                pcall(function()
-                    firesignal(obj.MouseButton1Click)
-                    fired = true
-                end)
-                pcall(function()
-                    firesignal(obj.Activated)
-                end)
-                return fired
-            end
-        end
-        return false
-    end
-
     local function SendRecordedMouse(Action)
         local x = tonumber(Action.X) or 0
         local y = tonumber(Action.Y) or 0
 
-        -- Сначала пробуем 2D GUI — кнопки интерфейса и TopbarPlus.
-        if Action.State == "Began" and TryFireGuiButton(x, y) then
-            return
-        end
-
         if Settings.MacroCompensateInset then
             pcall(function()
                 local inset = GuiService:GetGuiInset()
-                y = y + inset.Y
+                y = y - inset.Y
             end)
         end
 
-        -- Затем ClickDetector.
         local detector = GetClickDetectorAt(x, y)
         if detector then
             if Action.State == "Began" then
@@ -1227,7 +1191,6 @@ do
             return
         end
 
-        -- Последний fallback — VirtualInputManager.
         pcall(function()
             local button = Action.Key == Enum.UserInputType.MouseButton2 and 1 or 0
             local pressed = Action.State == "Began"
@@ -1262,9 +1225,8 @@ do
                 Macro.HeldKeys.S = false
                 Macro.HeldKeys.D = false
 
-                for index, Action in ipairs(Macro.Data) do
+                for _, Action in ipairs(Macro.Data) do
                     if not Macro.Playing then break end
-                    Macro.UpdateCount(index)
                     local PreviousTime = _PreviousMacroTime or 0
                     local Delay = math.max(0, Action.Time - PreviousTime)
                     _PreviousMacroTime = Action.Time
@@ -1343,131 +1305,13 @@ do
         return SaveFolder .. "/" .. name .. ".json"
     end
 
-    local function GetMacroAccountId()
-        return tostring(LocalPlayer.UserId)
-    end
-
-    local function NormalizeMacroIds(data)
-        local ids = {}
-        local seen = {}
-        if type(data) == "table" and type(data.IDs) == "table" then
-            for _, id in ipairs(data.IDs) do
-                id = tostring(id)
-                if id ~= "" and not seen[id] then
-                    seen[id] = true
-                    table.insert(ids, id)
-                end
-            end
-        end
-        return ids
-    end
-
-    local function ReadMacroFile(name)
-        if not name or name == "" then return nil end
-        local path = GetMacroPath(name)
-        local ok, data = pcall(function()
-            if not isfile(path) then return nil end
-            return HttpService:JSONDecode(readfile(path))
-        end)
-        if not ok or type(data) ~= "table" then return nil end
-        return data
-    end
-
-    local function WriteMacroFile(name, data)
-        if not name or name == "" or type(data) ~= "table" then return false end
-        local ok = pcall(function()
-            if not isfolder(SaveFolder) then makefolder(SaveFolder) end
-            writefile(GetMacroPath(name), HttpService:JSONEncode(data))
-        end)
-        return ok
-    end
-
-    local function BindMacroToCurrentAccount(name)
-        if not name or name == "" then return end
-        local accountId = GetMacroAccountId()
-        local okFiles, files = pcall(function() return listfiles(SaveFolder) end)
-        if not okFiles or not files then return end
-
-        -- Один аккаунт может быть привязан только к одному макросу.
-        for _, file in ipairs(files) do
-            local otherName = tostring(file):match("([^\\/]+)%.json$")
-            if otherName and otherName ~= "settings" and otherName ~= name then
-                local data = ReadMacroFile(otherName)
-                if data and type(data) == "table" and type(data.IDs) == "table" then
-                    local ids = NormalizeMacroIds(data)
-                    local changed = false
-                    local newIds = {}
-                    for _, id in ipairs(ids) do
-                        if id == accountId then
-                            changed = true
-                        else
-                            table.insert(newIds, id)
-                        end
-                    end
-                    if changed then
-                        data.IDs = newIds
-                        WriteMacroFile(otherName, data)
-                    end
-                end
-            end
-        end
-
-        local data = ReadMacroFile(name)
-        if not data then return end
-
-        -- Старый формат массива событий автоматически превращаем в новый.
-        if data[1] ~= nil and data.Data == nil then
-            data = { Data = data, IDs = {} }
-        end
-
-        local ids = NormalizeMacroIds(data)
-        for _, id in ipairs(ids) do
-            if id == accountId then
-                data.IDs = ids
-                WriteMacroFile(name, data)
-                return
-            end
-        end
-        table.insert(ids, accountId)
-        data.IDs = ids
-        WriteMacroFile(name, data)
-    end
-
-    local function FindMacroForCurrentAccount()
-        local accountId = GetMacroAccountId()
-        local okFiles, files = pcall(function() return listfiles(SaveFolder) end)
-        if not okFiles or not files then return nil end
-
-        local matches = {}
-        for _, file in ipairs(files) do
-            local name = tostring(file):match("([^\\/]+)%.json$")
-            if name and name ~= "settings" then
-                local data = ReadMacroFile(name)
-                if data then
-                    for _, id in ipairs(NormalizeMacroIds(data)) do
-                        if id == accountId then
-                            table.insert(matches, name)
-                            break
-                        end
-                    end
-                end
-            end
-        end
-        table.sort(matches)
-        return matches[1]
-    end
-
     function Macro.ListSaved()
         local names = {}
         local ok, files = pcall(function() return listfiles(SaveFolder) end)
         if ok and files then
             for _, file in ipairs(files) do
                 local name = tostring(file):match("([^\\/]+)%.json$")
-                -- Как и обычные конфиги, макросы остаются видимыми в списке.
-                -- IDs используются для автоматического выбора, а не для скрытия файла.
-                if name and name ~= "settings" then
-                    table.insert(names, name)
-                end
+                if name then table.insert(names, name) end
             end
         end
         table.sort(names)
@@ -1479,24 +1323,75 @@ do
             if not isfolder(SaveFolder) then makefolder(SaveFolder) end
             writefile(LastSelectedFile, name or "")
         end)
-        if name and name ~= "" then
-            pcall(function() BindMacroToCurrentAccount(name) end)
-        end
     end
 
     function Macro.GetLastSelected()
-        -- ВАЖНО ДЛЯ МУЛЬТИ-АККАУНТОВ:
-        -- сначала ищем макрос по Roblox UserId.
-        local accountMacro = FindMacroForCurrentAccount()
-        if accountMacro then
-            return accountMacro
+        local ok, exists = pcall(function() return isfile(LastSelectedFile) end)
+        if not ok or not exists then return nil end
+        local okRead, content = pcall(function() return readfile(LastSelectedFile) end)
+        if okRead and content and content ~= "" then return content end
+        return nil
+    end
+
+    function Macro.SetBind(bindName, keyCode)
+        if not bindName or not keyCode or keyCode == Enum.KeyCode.Unknown then return end
+        MacroBinds[bindName] = keyCode
+        pcall(function()
+            local current = {}
+            if isfile(SettingsFile) then
+                local raw = readfile(SettingsFile)
+                local ok, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+                if ok and type(decoded) == "table" then current = decoded end
+            end
+            current.MacroBinds = {
+                Record = macroBindText(MacroBinds.Record),
+                Stop = macroBindText(MacroBinds.Stop),
+                Play = macroBindText(MacroBinds.Play),
+                Save = macroBindText(MacroBinds.Save),
+            }
+            writefile(SettingsFile, HttpService:JSONEncode(current))
+        end)
+    end
+
+    function Macro.SaveByBind()
+        local name = macroNameInput ~= "" and macroNameInput or Macro.SelectedName
+        if not name or name == "" then
+            notifyUser("Macro Recorder", "Enter Macro Name or select a macro first.", 3)
+            return false
         end
 
-        -- Если текущий UserId ещё ни к одному макросу не привязан,
-        -- НЕ используем общий _last_selected.txt.
-        -- Иначе второй аккаунт мог бы случайно получить макрос
-        -- первого аккаунта.
-        return nil
+        if Macro.Recording then
+            Macro.StopRecording()
+        end
+        if Macro.Playing then
+            Macro.Playing = false
+            Macro.SetStatus("Playback stopped.")
+        end
+
+        local ok = Macro.SaveNamed(name)
+        if ok then
+            Macro.SelectedName = name
+            Macro.RememberLast(name)
+            if RefreshMacroDropdown then pcall(RefreshMacroDropdown) end
+        end
+        return ok
+    end
+
+    -- Сохраняет текущий снимок макроса даже во время записи.
+    -- Используется Auto Save, чтобы при неожиданном кике/закрытии не потерять запись.
+    function Macro.AutoSaveSnapshot(reason)
+        local name = macroNameInput ~= "" and macroNameInput or Macro.SelectedName
+        if not name or name == "" or #Macro.Data == 0 then return false end
+        local ok, err = pcall(function()
+            if not isfolder(SaveFolder) then makefolder(SaveFolder) end
+            writefile(GetMacroPath(name), HttpService:JSONEncode(SerializeMacro()))
+        end)
+        if ok and reason then
+            Macro.SetStatus("Auto-saved \"" .. name .. "\"" .. (reason and (" (" .. reason .. ")") or ""))
+        elseif not ok then
+            warn("[MACRO] AutoSave failed:", err)
+        end
+        return ok
     end
 
     function Macro.SaveNamed(name)
@@ -1514,24 +1409,10 @@ do
         end
         local ok, err = pcall(function()
             if not isfolder(SaveFolder) then makefolder(SaveFolder) end
-
-            local existing = ReadMacroFile(name)
-            local ids = NormalizeMacroIds(existing)
-            local accountId = GetMacroAccountId()
-            local hasCurrent = false
-            for _, id in ipairs(ids) do
-                if id == accountId then hasCurrent = true break end
-            end
-            if not hasCurrent then table.insert(ids, accountId) end
-
-            local payload = {
-                IDs = ids,
-                Data = SerializeMacro()
-            }
-            writefile(GetMacroPath(name), HttpService:JSONEncode(payload))
+            local json = HttpService:JSONEncode(SerializeMacro())
+            writefile(GetMacroPath(name), json)
         end)
         if ok then
-            pcall(function() BindMacroToCurrentAccount(name) end)
             Macro.SetStatus("Macro saved as \"" .. name .. "\" (" .. #Macro.Data .. " events).")
             notifyUser("Macro Recorder", "Saved as \"" .. name .. "\" (" .. #Macro.Data .. " events).", 2)
         else
@@ -1539,6 +1420,32 @@ do
             notifyUser("Macro Recorder", "Failed to save macro: " .. tostring(err), 4)
         end
         return ok
+    end
+
+    function Macro.AutoSaveCurrent()
+        if not Settings.MacroAutoSaveEnabled or #Macro.Data == 0 then return false end
+        local name = Macro.SelectedName
+        if (not name or name == "") and macroNameInput and macroNameInput ~= "" then name = macroNameInput end
+        if not name or name == "" then return false end
+        local ok = pcall(function()
+            if not isfolder(SaveFolder) then makefolder(SaveFolder) end
+            writefile(GetMacroPath(name), HttpService:JSONEncode(SerializeMacro()))
+        end)
+        if ok then
+            Macro.SelectedName = name
+            pcall(function() Macro.RememberLast(name) end)
+            task.defer(function() if RefreshMacroDropdown then pcall(RefreshMacroDropdown) end end)
+        end
+        return ok
+    end
+
+    function Macro.StartAutoSave()
+        if Macro._AutoSaveThread then return end
+        Macro._AutoSaveThread = task.spawn(function()
+            while task.wait(math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3)) do
+                if Settings.MacroAutoSaveEnabled then Macro.AutoSaveCurrent() end
+            end
+        end)
     end
 
     function Macro.LoadNamed(name, silent)
@@ -1554,16 +1461,8 @@ do
         end
         local okLoad, result = pcall(function()
             local json = readfile(path)
-            local raw = HttpService:JSONDecode(json)
-            -- Поддержка старого формата: JSON-массив событий.
-            if type(raw) == "table" and raw.Data == nil and raw[1] ~= nil then
-                return DeserializeMacro(raw)
-            end
-            -- Новый формат: IDs + Data.
-            if type(raw) == "table" and type(raw.Data) == "table" then
-                return DeserializeMacro(raw.Data)
-            end
-            error("Invalid macro format")
+            local data = HttpService:JSONDecode(json)
+            return DeserializeMacro(data)
         end)
         if okLoad and result then
             Macro.Data = result
@@ -1596,24 +1495,14 @@ do
     end
 
     -- НАСТРОЙКА ВВОДА
-    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+    local macroBindLastFire = {}
+    local MACRO_BIND_DEBOUNCE = 0.35
 
-    local function IsClickOnOwnUI(x, y)
-        local ok, guiObjects = pcall(function()
-            return PlayerGui:GetGuiObjectsAtPosition(x, y)
-        end)
-        if not ok or not guiObjects then return false end
-
-        local root = Window and Window.Root
-        if not root then return false end
-
-        for _, obj in ipairs(guiObjects) do
-            local okCheck, result = pcall(function()
-                return obj:IsDescendantOf(root)
-            end)
-            if okCheck and result then return true end
-        end
-        return false
+    local function MacroBindAllowed(name)
+        local now = os.clock()
+        if now - (macroBindLastFire[name] or 0) < MACRO_BIND_DEBOUNCE then return false end
+        macroBindLastFire[name] = now
+        return true
     end
 
     function Macro.SetupInput()
@@ -1621,85 +1510,55 @@ do
         if inputEndedConn then inputEndedConn:Disconnect() end
 
         inputBeganConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-            if input.KeyCode == Keybinds.RecordToggle then
-                local now = os.clock()
-                if now - Macro.LastRecTogTime < KeybindCooldown then return end
-                Macro.LastRecTogTime = now
-                Macro.ToggleRecording()
-                return
-            end
 
-            if input.KeyCode == Keybinds.PlayStop then
-                local now = os.clock()
-                if now - Macro.LastPlayStopTime < KeybindCooldown then return end
-                Macro.LastPlayStopTime = now
-                if Macro.Playing then
-                    Macro.Playing = false
-                    Macro.SetStatus("Playback stopped.")
-                elseif not Macro.Recording then
-                    Macro.Play()
-                end
-                return
-            end
-
-            if not Macro.Recording then return end
+            if gameProcessed or not Macro.Recording then return end
 
             if input.UserInputType == Enum.UserInputType.Keyboard then
-                -- Не записываем клавиатуру, если игра/поле ввода уже обработали её.
-                if not gameProcessed then
-                    AddEvent({
-                        Type = "Keyboard",
-                        Key = input.KeyCode,
-                        State = "Began"
-                    })
-                    if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = true
-                    elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = true
-                    elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = true
-                    elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = true end
-                end
+                AddEvent({
+                    Type = "Keyboard",
+                    Key = input.KeyCode,
+                    State = "Began"
+                })
+                if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = true
+                elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = true
+                elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = true
+                elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = true end
 
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2 then
-                -- Клики записываем даже при gameProcessed, но не клики по нашей панели.
-                if not IsClickOnOwnUI(input.Position.X, input.Position.Y) then
-                    AddEvent({
-                        Type = "Mouse",
-                        Key = input.UserInputType,
-                        State = "Began",
-                        X = input.Position.X,
-                        Y = input.Position.Y
-                    })
-                end
+                AddEvent({
+                    Type = "Mouse",
+                    Key = input.UserInputType,
+                    State = "Began",
+                    X = input.Position.X,
+                    Y = input.Position.Y
+                })
             end
         end)
 
         inputEndedConn = UserInputService.InputEnded:Connect(function(input, gameProcessed)
-            if not Macro.Recording then return end
+            if gameProcessed or not Macro.Recording then return end
 
             if input.UserInputType == Enum.UserInputType.Keyboard then
-                if not gameProcessed then
-                    AddEvent({
-                        Type = "Keyboard",
-                        Key = input.KeyCode,
-                        State = "Ended"
-                    })
-                    if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = false
-                    elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = false
-                    elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = false
-                    elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = false end
-                end
+                AddEvent({
+                    Type = "Keyboard",
+                    Key = input.KeyCode,
+                    State = "Ended"
+                })
+                if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = false
+                elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = false
+                elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = false
+                elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = false end
 
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2 then
-                if not IsClickOnOwnUI(input.Position.X, input.Position.Y) then
-                    AddEvent({
-                        Type = "Mouse",
-                        Key = input.UserInputType,
-                        State = "Ended",
-                        X = input.Position.X,
-                        Y = input.Position.Y
-                    })
-                end
+                AddEvent({
+                    Type = "Mouse",
+                    Key = input.UserInputType,
+                    State = "Ended",
+                    X = input.Position.X,
+                    Y = input.Position.Y
+                })
             end
         end)
     end
@@ -1746,6 +1605,21 @@ do
     end
 
     -- СОХРАНЕНИЕ НАСТРОЕК
+    function Macro.LoadBinds()
+        pcall(function()
+            if not isfile(SettingsFile) then return end
+            local raw = readfile(SettingsFile)
+            local decoded = HttpService:JSONDecode(raw)
+            local b = decoded and decoded.MacroBinds
+            if type(b) ~= "table" then return end
+            for name, value in pairs(b) do
+                if MacroBinds[name] and type(value) == "string" and Enum.KeyCode[value] then
+                    MacroBinds[name] = Enum.KeyCode[value]
+                end
+            end
+        end)
+    end
+
     function Macro.SaveSettings()
         pcall(function()
             if not isfolder(SaveFolder) then makefolder(SaveFolder) end
@@ -1757,6 +1631,16 @@ do
                 CompensateInset = Settings.MacroCompensateInset,
                 DebugClicks = Settings.MacroDebugClicks,
                 Loop = Settings.MacroLoop,
+                AutoSaveEnabled = Settings.MacroAutoSaveEnabled,
+                AutoSaveInterval = Settings.MacroAutoSaveInterval,
+                MacroAutoSave = Settings.MacroAutoSave,
+                MacroAutoSaveInterval = Settings.MacroAutoSaveInterval,
+                MacroBinds = {
+                    Record = macroBindText(MacroBinds.Record),
+                    Stop = macroBindText(MacroBinds.Stop),
+                    Play = macroBindText(MacroBinds.Play),
+                    Save = macroBindText(MacroBinds.Save),
+                },
             }))
         end)
     end
@@ -1773,9 +1657,46 @@ do
         if data.CompensateInset ~= nil then Settings.MacroCompensateInset = data.CompensateInset end
         if data.DebugClicks ~= nil then Settings.MacroDebugClicks = data.DebugClicks end
         if data.Loop ~= nil then Settings.MacroLoop = data.Loop end
+        if data.AutoSaveEnabled ~= nil then Settings.MacroAutoSaveEnabled = data.AutoSaveEnabled end
+        if data.AutoSaveInterval ~= nil then Settings.MacroAutoSaveInterval = tonumber(data.AutoSaveInterval) or 3 end
+        if data.MacroAutoSave ~= nil then Settings.MacroAutoSave = data.MacroAutoSave end
+        if data.MacroAutoSaveInterval ~= nil then Settings.MacroAutoSaveInterval = tonumber(data.MacroAutoSaveInterval) or 3 end
+        if type(data.MacroBinds) == "table" then
+            for name, value in pairs(data.MacroBinds) do
+                if MacroBinds[name] and type(value) == "string" and Enum.KeyCode[value] then
+                    MacroBinds[name] = Enum.KeyCode[value]
+                end
+            end
+        end
     end
     Macro.LoadSettings()
 end
+
+-- AUTO SAVE: периодически сохраняет снимок текущего макроса, если имя указано.
+-- Это позволяет сохранить почти всю запись даже при внезапном кике/закрытии.
+task.spawn(function()
+    while task.wait(math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3)) do
+        if Settings.MacroAutoSave and Macro.Recording then
+            Macro.AutoSaveSnapshot("auto")
+        end
+    end
+end)
+
+-- Дополнительная попытка сохранить последний снимок при удалении игрока.
+pcall(function()
+    LocalPlayer.AncestryChanged:Connect(function(_, parent)
+        if parent == nil and Settings.MacroAutoSave then
+            Macro.AutoSaveSnapshot("player removed")
+        end
+    end)
+end)
+pcall(function()
+    Players.PlayerRemoving:Connect(function(player)
+        if player == LocalPlayer and Settings.MacroAutoSave then
+            Macro.AutoSaveSnapshot("player removing")
+        end
+    end)
+end)
 
 -- ИНИЦИАЛИЗАЦИЯ
 Macro.SetupInput()
@@ -3195,9 +3116,56 @@ local MacroRecorderTab = Window:AddTab({Title = "Macro Recorder", Icon = "rbxass
 
 MacroRecorderTab:AddSection("Recording")
 
-Macro.Count = MacroRecorderTab:AddParagraph({ Title = "Events", Content = "0" })
+-- Изменяемые бинды. Fluent ожидает Default как строку имени клавиши.
+local function addMacroKeybind(id, title, bindName, fallback, onPress)
+    local defaultKey = MacroBinds[bindName] and MacroBinds[bindName].Name or fallback
+    local ok, control = pcall(function()
+        return MacroRecorderTab:AddKeybind(id, {
+            Title = title,
+            Mode = "Toggle",
+            Default = defaultKey,
+            Callback = function(value)
+                if value == true then
+                    pcall(onPress)
+                end
+            end,
+            ChangedCallback = function(newKey)
+                if newKey then
+                    Macro.SetBind(bindName, newKey)
+                    Macro.SaveSettings()
+                end
+            end
+        })
+    end)
+    if not ok then
+        warn("[MACRO] Failed to create keybind " .. title .. ": " .. tostring(control))
+    end
+    return control
+end
+
+addMacroKeybind("MacroRecordBind", "Record Bind", "Record", "LeftBracket", function()
+    Macro.ToggleRecording()
+end)
+
+addMacroKeybind("MacroStopBind", "Stop Recording Bind", "Stop", "RightBracket", function()
+    if Macro.Recording then Macro.StopRecording() end
+end)
+
+addMacroKeybind("MacroPlayBind", "Play / Stop Bind", "Play", "BackSlash", function()
+    if Macro.Playing then
+        Macro.Playing = false
+        Macro.SetStatus("Playback stopped.")
+    elseif not Macro.Recording then
+        Macro.Play()
+    end
+end)
+
+addMacroKeybind("MacroSaveBind", "Save Macro Bind", "Save", "F6", function()
+    Macro.SaveByBind()
+end)
+
+Macro.Count = MacroRecorderTab:AddParagraph({ Title = "Events", Content = "0/0" })
 Macro.Status = MacroRecorderTab:AddParagraph({ Title = "Status", Content = "Ready.\n[ - record\n] - stop\n\\ - play / stop" })
-Macro.UpdateCount()
 
 MacroRecorderTab:AddButton({ Title = "Start Recording", Description = "[", Callback = function() Macro.StartRecording() end })
 MacroRecorderTab:AddButton({ Title = "Stop Recording", Description = "]", Callback = function() Macro.StopRecording() end })
@@ -3221,7 +3189,6 @@ end })
 
 MacroRecorderTab:AddSection("Save / Load")
 
-local macroNameInput = ""
 MacroRecorderTab:AddInput("MacroNameInput", {
     Title = "Macro Name",
     Placeholder = "e.g. bee swarm 1",
@@ -3248,12 +3215,19 @@ local function RefreshMacroDropdown()
 end
 
 MacroRecorderTab:AddButton({ Title = "Save", Callback = function()
-    local name = macroNameInput ~= "" and macroNameInput or Macro.SelectedName
-    if not name or name == "" then notifyUser("Macro Recorder", "Type a name first.", 2) return end
+    local name = (macroNameInput and macroNameInput ~= "") and macroNameInput or Macro.SelectedName
+    if not name or name == "" then
+        notifyUser("Macro Recorder", "Type a name first.", 2)
+        return
+    end
+    if Macro.Recording then Macro.StopRecording() end
+    if Macro.Playing then Macro.Playing = false end
     if Macro.SaveNamed(name) then
         Macro.SelectedName = name
         Macro.RememberLast(name)
-        RefreshMacroDropdown()
+        task.defer(function()
+            if RefreshMacroDropdown then pcall(RefreshMacroDropdown) end
+        end)
     end
 end })
 
@@ -3273,6 +3247,28 @@ end })
 MacroRecorderTab:AddSection("Settings")
 
 MacroRecorderTab:AddParagraph({ Title = "Keybinds", Content = "[ = toggle recording\n] = start / stop playback" })
+
+
+MacroRecorderTab:AddToggle("MacroAutoSaveEnabled", {
+    Title = "Auto Save Macro",
+    Description = "Automatically saves the current macro while recording.",
+    Default = Settings.MacroAutoSaveEnabled == true,
+    Callback = function(v)
+        Settings.MacroAutoSaveEnabled = v == true
+        Settings.MacroAutoSave = Settings.MacroAutoSaveEnabled
+        Macro.SaveSettings()
+    end
+})
+
+MacroRecorderTab:AddSlider("MacroAutoSaveInterval", {
+    Title = "Auto Save Interval (s)",
+    Min = 1, Max = 30, Rounding = 1,
+    Default = tonumber(Settings.MacroAutoSaveInterval) or 3,
+    Callback = function(v)
+        Settings.MacroAutoSaveInterval = tonumber(v) or 3
+        Macro.SaveSettings()
+    end
+})
 
 MacroRecorderTab:AddToggle("MacroAutoLoadOnStart", {
     Title = "Auto-load macro on start",
@@ -3425,122 +3421,6 @@ local function loadDefault()
     pcall(function() Macro.StartMovement() end)
 end
 
-local function getCurrentAccountId()
-    return tostring(LocalPlayer.UserId)
-end
-
--- Привязка конфигурации к Roblox UserId.
--- Один конфиг может принадлежать нескольким аккаунтам, но один аккаунт
--- всегда привязывается только к одному конфигу.
-local function readConfigData(name)
-    if not name or name == "" or name == "default" then return nil end
-    local path = CONFIG_FOLDER.."/"..name..".json"
-    local ok, data = pcall(function()
-        if not isfile(path) then return nil end
-        return HttpService:JSONDecode(readfile(path))
-    end)
-    if ok and type(data) == "table" then return data end
-    return nil
-end
-
-local function writeConfigData(name, data)
-    if not name or name == "" or name == "default" or type(data) ~= "table" then return false end
-    local path = CONFIG_FOLDER.."/"..name..".json"
-    local ok = pcall(function()
-        if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
-        writefile(path, HttpService:JSONEncode(data))
-    end)
-    return ok
-end
-
-local function normalizeConfigIds(data)
-    local ids = {}
-    local seen = {}
-    if type(data) == "table" and type(data.IDs) == "table" then
-        for _, id in ipairs(data.IDs) do
-            id = tostring(id)
-            if id ~= "" and not seen[id] then
-                seen[id] = true
-                table.insert(ids, id)
-            end
-        end
-    end
-    return ids
-end
-
-local function setAccountConfigBinding(name)
-    if not name or name == "" or name == "default" then return end
-
-    local accountId = getCurrentAccountId()
-    local okFiles, files = pcall(function() return listfiles(CONFIG_FOLDER) end)
-    if not okFiles or not files then return end
-
-    -- Сначала убираем текущий аккаунт из всех других конфигов,
-    -- чтобы он никогда не был привязан сразу к двум конфигам.
-    for _, file in ipairs(files) do
-        local otherName = tostring(file):match("([^\\/]+)%.json$")
-        if otherName and otherName ~= name then
-            local data = readConfigData(otherName)
-            if data then
-                local oldIds = normalizeConfigIds(data)
-                local newIds = {}
-                local changed = false
-                for _, id in ipairs(oldIds) do
-                    if id == accountId then
-                        changed = true
-                    else
-                        table.insert(newIds, id)
-                    end
-                end
-                if changed then
-                    data.IDs = newIds
-                    writeConfigData(otherName, data)
-                end
-            end
-        end
-    end
-
-    local data = readConfigData(name)
-    if not data then return end
-
-    local ids = normalizeConfigIds(data)
-    for _, id in ipairs(ids) do
-        if id == accountId then
-            data.IDs = ids
-            return
-        end
-    end
-
-    table.insert(ids, accountId)
-    data.IDs = ids
-    writeConfigData(name, data)
-end
-
-local function findConfigForCurrentAccount()
-    local accountId = getCurrentAccountId()
-    local okFiles, files = pcall(function() return listfiles(CONFIG_FOLDER) end)
-    if not okFiles or not files then return nil end
-
-    local matches = {}
-    for _, file in ipairs(files) do
-        local name = tostring(file):match("([^\\/]+)%.json$")
-        if name and name ~= "default" then
-            local data = readConfigData(name)
-            if data then
-                for _, id in ipairs(normalizeConfigIds(data)) do
-                    if id == accountId then
-                        table.insert(matches, name)
-                        break
-                    end
-                end
-            end
-        end
-    end
-
-    table.sort(matches)
-    return matches[1]
-end
-
 local function saveConfig(name)
     if not name or name == "" or name == "default" then return end
     local hrp = getHRP()
@@ -3579,21 +3459,6 @@ local function saveConfig(name)
         MacroAutoStartDelay = Settings.MacroAutoStartDelay,
         Visual = VisualState,
     }
-
-    -- Сохраняем уже привязанные аккаунты и добавляем текущий UserId.
-    local existing = readConfigData(name)
-    local ids = normalizeConfigIds(existing)
-    local currentId = getCurrentAccountId()
-    local hasCurrent = false
-    for _, id in ipairs(ids) do
-        if id == currentId then
-            hasCurrent = true
-            break
-        end
-    end
-    if not hasCurrent then table.insert(ids, currentId) end
-    data.IDs = ids
-
     writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
 end
 
@@ -3825,32 +3690,16 @@ end
 
 local function AutoLoad()
     if not Settings.AutoLoadEnabled then return end
-
-    -- Сначала ищем конфиг, привязанный именно к текущему Roblox UserId.
-    -- Это имеет приоритет над старым общим last.txt.
-    local accountConfig = findConfigForCurrentAccount()
-    if accountConfig then
-        local ok, result = pcall(function() return loadConfig(accountConfig) end)
-        if ok and result then
-            currentConfig = accountConfig
-            rememberLastConfig(accountConfig)
-            return
-        end
-    end
-
-    -- Совместимость со старыми конфигами без IDs.
     if isfile(LAST_CONFIG_FILE) then
         local last = readfile(LAST_CONFIG_FILE)
         if last and last ~= "" then
             local ok, result = pcall(function() return loadConfig(last) end)
             if ok and result then
                 currentConfig = last
-                pcall(function() setAccountConfigBinding(last) end)
                 return
             end
         end
     end
-
     currentConfig = "default"
     loadConfig("default")
 end
@@ -3863,15 +3712,7 @@ local configDropdown = ConfigTab:AddDropdown("Configs", {
     Title = "Configs",
     Values = {"default"},
     Default = "default",
-    Callback = function(opt)
-        currentConfig = opt
-        if opt ~= "default" then
-            pcall(function() setAccountConfigBinding(opt) end)
-        end
-        rememberLastConfig(opt)
-        updateSelected()
-        loadConfig(currentConfig)
-    end 
+    Callback = function(opt) currentConfig = opt; rememberLastConfig(opt); updateSelected(); loadConfig(currentConfig) end 
 })
 
 local function refreshDropdown()
@@ -3887,38 +3728,9 @@ refreshDropdown()
 
 local inputName = ""
 ConfigTab:AddInput("ConfigName", {Title = "Config Name", Placeholder = "Enter name...", Default = "", Callback = function(text) inputName = text end })
-ConfigTab:AddButton({Title ="Create", Callback = function()
-    if inputName=="" or inputName=="default" then return end
-
-    currentConfig = inputName
-
-    -- Создание нового обычного конфига или выбор уже существующего.
-    -- Текущий Roblox UserId добавляется в IDs, поэтому один конфиг
-    -- можно использовать несколькими аккаунтами.
-    if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then
-        saveConfig(inputName)
-    end
-
-    pcall(function() setAccountConfigBinding(inputName) end)
-    rememberLastConfig(inputName)
-    refreshDropdown()
-    updateSelected()
-end })
-ConfigTab:AddButton({Title ="Save", Callback = function()
-    if not currentConfig then return end
-    if currentConfig ~= "default" then pcall(function() setAccountConfigBinding(currentConfig) end) end
-    saveConfig(currentConfig)
-    AutoSave()
-    refreshDropdown()
-end })
-ConfigTab:AddButton({Title ="Load", Callback = function()
-    if not currentConfig then return end
-    if currentConfig ~= "default" then
-        pcall(function() setAccountConfigBinding(currentConfig) end)
-    end
-    loadConfig(currentConfig)
-    rememberLastConfig(currentConfig)
-end })
+ConfigTab:AddButton({Title ="Create", Callback = function() if inputName=="" or inputName=="default" then return end; currentConfig = inputName; rememberLastConfig(inputName); if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then saveConfig(inputName) end; refreshDropdown(); updateSelected() end })
+ConfigTab:AddButton({Title ="Save", Callback = function() if not currentConfig then return end; saveConfig(currentConfig); AutoSave(); refreshDropdown() end })
+ConfigTab:AddButton({Title ="Load", Callback = function() if not currentConfig then return end; loadConfig(currentConfig) end })
 ConfigTab:AddButton({Title ="Delete", Callback = function() if currentConfig=="default" then return end; local path = CONFIG_FOLDER.."/"..currentConfig..".json"; if isfile(path) then delfile(path) end; if isfile(LAST_CONFIG_FILE) and readfile(LAST_CONFIG_FILE) == currentConfig then delfile(LAST_CONFIG_FILE) end; currentConfig="default"; loadDefault(); refreshDropdown(); updateSelected() end })
 ConfigTab:AddToggle("AutoLoad", {Title = "Auto Load", Default = Settings.AutoLoadEnabled, Callback = function(v) Settings.AutoLoadEnabled=v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
 ConfigTab:AddToggle("AutoSave", {Title = "Auto Save", Default = Settings.AutoSaveEnabled, Callback = function(v) Settings.AutoSaveEnabled=v; if v and currentConfig ~= "default" then saveConfig(currentConfig) end end })
