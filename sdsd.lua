@@ -106,9 +106,6 @@ local Settings = {
     MacroModes = {},
     AutoRestoreCam = true,
     MacroLoop = false,
-    MacroAutoSave = false,
-    MacroAutoSaveInterval = 3,
-    MacroAutoSaveEnabled = false,
     MacroCompensateInset = false,
     MacroDebugClicks = true,
     MacroAutoLoadOnStart = true,
@@ -117,6 +114,8 @@ local Settings = {
     MacroAutoStartDelay = 2,
     AutoSaveEnabled = false,
     AutoLoadEnabled = true,
+    MacroAutoSaveEnabled = false,
+    MacroAutoSaveInterval = 3,
 }
 
 local winStreak = 0
@@ -125,8 +124,11 @@ local matchTrackingActive = false
 local endedConnection = nil
 local endedBoolValue = nil
 local currentConfig = "default"
+local ConfigApplying = false
+local ScriptInitializing = true
 
 local function notifyUser(title, content, duration)
+    if ConfigApplying or ScriptInitializing then return end
     pcall(function()
         if Settings.NotificationsEnabled then
             Fluent:Notify({
@@ -179,113 +181,65 @@ end
 local function getGameResult()
     local player = Players.LocalPlayer
     if not player then return "Unknown" end
-    
     local playerGui = player:FindFirstChild("PlayerGui")
     if not playerGui then return "Unknown" end
-    
     local gameEnded = playerGui:FindFirstChild("GameEnded")
     if not gameEnded then return "Unknown" end
-    
     local frame = gameEnded:FindFirstChild("Frame")
     if not frame then return "Unknown" end
-    
     local tping = frame:FindFirstChild("tping")
     if not tping then return "Unknown" end
-    
     local resultText = tping.Text
     local lowerText = resultText:lower()
-    
-    if lowerText:find("win") or lowerText:find("victory") or lowerText:find("побед") or
-       lowerText:find("defeated") then
+    if lowerText:find("win") or lowerText:find("victory") or lowerText:find("побед") or lowerText:find("defeated") then
         return "WIN"
     end
-    
-    if lowerText:find("lose") or lowerText:find("defeat") or lowerText:find("destroyed") or
-       lowerText:find("пораж") or lowerText:find("уничтож") then
+    if lowerText:find("lose") or lowerText:find("defeat") or lowerText:find("destroyed") or lowerText:find("пораж") or lowerText:find("уничтож") then
         return "LOSE"
     end
-    
     return "Unknown"
 end
 
 local function collectMatchStats()
     local stats = {
-        kills = "N/A",
-        survived = "N/A",
-        timeelapsed = "N/A",
-        items = "N/A",
-        clock = "N/A",
-        credits = "N/A",
-        crystals = "N/A",
-        spent = "N/A"
+        kills = "N/A", survived = "N/A", timeelapsed = "N/A",
+        items = "N/A", clock = "N/A", credits = "N/A",
+        crystals = "N/A", spent = "N/A"
     }
-    
     local player = Players.LocalPlayer
     if not player then return stats end
-    
     local playerGui = player:FindFirstChild("PlayerGui")
     if not playerGui then return stats end
-    
     local gameEnded = playerGui:FindFirstChild("GameEnded")
     if not gameEnded then return stats end
-    
     local frame = gameEnded:FindFirstChild("Frame")
     if not frame then return stats end
-    
     local main = frame:FindFirstChild("main")
     if not main then return stats end
-    
     local killsLabel = main:FindFirstChild("kills")
-    if killsLabel then
-        stats.kills = getValueAfterColon(killsLabel.Text)
-    end
-    
+    if killsLabel then stats.kills = getValueAfterColon(killsLabel.Text) end
     local survivedLabel = main:FindFirstChild("survived")
-    if survivedLabel then
-        stats.survived = getValueAfterColon(survivedLabel.Text)
-    end
-    
+    if survivedLabel then stats.survived = getValueAfterColon(survivedLabel.Text) end
     local timeLabel = main:FindFirstChild("timeelapsed")
-    if timeLabel then
-        stats.timeelapsed = getValueAfterColon(timeLabel.Text)
-    end
-    
+    if timeLabel then stats.timeelapsed = getValueAfterColon(timeLabel.Text) end
     local itemsLabel = main:FindFirstChild("itemsearned")
-    if itemsLabel then
-        stats.items = getValueAfterColon(itemsLabel.Text)
-    end
-    
+    if itemsLabel then stats.items = getValueAfterColon(itemsLabel.Text) end
     local clockLabel = main:FindFirstChild("clockearned")
-    if clockLabel then
-        stats.clock = getValueAfterColon(clockLabel.Text)
-    end
-    
+    if clockLabel then stats.clock = getValueAfterColon(clockLabel.Text) end
     local creditsLabel = main:FindFirstChild("creditsearned")
-    if creditsLabel then
-        stats.credits = getValueAfterColon(creditsLabel.Text)
-    end
-    
+    if creditsLabel then stats.credits = getValueAfterColon(creditsLabel.Text) end
     local crystalsLabel = main:FindFirstChild("crystalsearned")
-    if crystalsLabel then
-        stats.crystals = getValueAfterColon(crystalsLabel.Text)
-    end
-    
+    if crystalsLabel then stats.crystals = getValueAfterColon(crystalsLabel.Text) end
     local spentLabel = main:FindFirstChild("spent")
-    if spentLabel then
-        stats.spent = getValueAfterColon(spentLabel.Text)
-    end
-    
+    if spentLabel then stats.spent = getValueAfterColon(spentLabel.Text) end
     return stats
 end
 
 local function sendMatchWebhook(fieldsData)
     if not Settings.WebhookEnabled or Settings.WebhookURL == "" then return end
     if not Settings.WebhookMatchTracking then return end
-    
     local timeNow = os.date("%H:%M:%S")
-    
     local function darkCode(v) return "```fix\n"..tostring(v).."\n```" end
-    
     local fields = {}
     for _, field in ipairs(fieldsData) do
         table.insert(fields, {
@@ -294,15 +248,9 @@ local function sendMatchWebhook(fieldsData)
             inline = field.inline or false
         })
     end
-    
     if Settings.ShowLogInWebhook then
-        table.insert(fields, {
-            name = "Log",
-            value = darkCode(timeNow),
-            inline = false
-        })
+        table.insert(fields, { name = "Log", value = darkCode(timeNow), inline = false })
     end
-    
     local data = {
         username = "Skibidi Defense Match Tracker",
         avatar_url = "https://cdn.discordapp.com/embed/avatars/0.png",
@@ -314,7 +262,6 @@ local function sendMatchWebhook(fieldsData)
             footer = { text = "Нажмите на значение чтобы скопировать" }
         }}
     }
-    
     local json = HttpService:JSONEncode(data)
     local request = http_request or request or (syn and syn.request) or (fluxus and fluxus.request)
     if request then
@@ -326,11 +273,9 @@ end
 
 local function onGameEnded()
     task.wait(1.5)
-    
     local result = getGameResult()
     local stats = collectMatchStats()
     local currentCredits = toNumber(stats.credits)
-    
     if result == "WIN" then
         winStreak = winStreak + 1
         totalCredits = totalCredits + currentCredits
@@ -338,7 +283,6 @@ local function onGameEnded()
         winStreak = 0
         totalCredits = 0
     end
-    
     local fields = {}
     for _, field in ipairs(Settings.WebhookMatchFields) do
         if field == "Result" then
@@ -365,7 +309,6 @@ local function onGameEnded()
             fields[#fields+1] = { name = "Total Credits", value = formatNumber(totalCredits), inline = false }
         end
     end
-    
     sendMatchWebhook(fields)
 end
 
@@ -374,16 +317,13 @@ local function setupTracking()
         endedConnection:Disconnect()
         endedConnection = nil
     end
-    
     if not endedBoolValue then return end
-    
     endedConnection = endedBoolValue:GetPropertyChangedSignal("Value"):Connect(function()
         if not Settings.WebhookMatchTracking then return end
         if endedBoolValue.Value == true then
             onGameEnded()
         end
     end)
-    
     if endedBoolValue.Value == true and Settings.WebhookMatchTracking then
         onGameEnded()
     end
@@ -391,14 +331,12 @@ end
 
 local function findAndTrackEndedBool()
     local replicatedStorage = game:GetService("ReplicatedStorage")
-    
     for _, child in ipairs(replicatedStorage:GetChildren()) do
         if child:IsA("BoolValue") and string.lower(child.Name) == "ended" then
             endedBoolValue = child
             break
         end
     end
-    
     if endedBoolValue then
         setupTracking()
     else
@@ -617,7 +555,7 @@ local function saveGameSettings()
     }
     for _, v in ipairs(Lighting:GetChildren()) do
         pcall(function()
-            if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("BloomEffect") or 
+            if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("BloomEffect") or
                v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect") or
                v:IsA("DepthOfFieldEffect") then
                 savedPostEffects[v] = v.Enabled
@@ -689,7 +627,7 @@ local function enablePotatoGraphics()
         Lighting.ExposureCompensation = 0
         for _, v in ipairs(Lighting:GetChildren()) do
             pcall(function()
-                if v.Name ~= "MenuBlur" and (v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or 
+                if v.Name ~= "MenuBlur" and (v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or
                    v:IsA("ColorCorrectionEffect") or v:IsA("DepthOfFieldEffect") or v:IsA("Atmosphere")) then
                     v.Enabled = false
                 end
@@ -880,7 +818,6 @@ local function walkLoop()
         local r = math.random(1, 100)
         local wc = Settings.WalkChance
         local jc = wc + Settings.JumpChance
-
         if r <= wc then
             local d = randWalkDir()
             for _, k in ipairs(d) do pressWalkKey(k) end
@@ -891,10 +828,10 @@ local function walkLoop()
             for _, k in ipairs(d) do pressWalkKey(k) end
             walkJump()
             task.wait(0.3 + math.random() * 0.8)
-            for _, k in ipairs(d) do releaseWalkKey(k) end        else
+            for _, k in ipairs(d) do releaseWalkKey(k) end
+        else
             task.wait(0.5 + math.random() * 1.5)
         end
-
         task.wait(Settings.PauseMin + math.random() * Settings.PauseMax)
         if math.random(1, 15) == 1 then releaseWalkKeys() end
     end
@@ -919,21 +856,21 @@ end
 print("[Loader] All functions ready")
 
 -- ===========================================================
--- MACRO RECORDER MODULE (ВЗЯТО ИЗ Macro.lua)
+-- MACRO RECORDER MODULE
 -- ===========================================================
-local Macro = {}
 local macroNameInput = ""
+
 local MacroBinds = {
-    Record = Enum.KeyCode.LeftBracket,
-    Stop = Enum.KeyCode.RightBracket,
-    Play = Enum.KeyCode.BackSlash,
+    Record = Enum.KeyCode.LeftBracket, -- Record / Stop Record
+    Play = Enum.KeyCode.BackSlash,     -- Play / Stop Play
     Save = Enum.KeyCode.F6,
 }
 
-local function macroBindText(key)
+local function MacroBindName(key)
     return key and key.Name or "Unknown"
 end
 
+local Macro = {}
 do
     local SaveFolder = "MacroRecorderData"
     local LastSelectedFile = SaveFolder .. "/_last_selected.txt"
@@ -947,12 +884,17 @@ do
     local Players = game:GetService("Players")
     local LocalPlayer = Players.LocalPlayer
 
-    -- ПЕРЕМЕННЫЕ (как в Macro.lua)
     Macro.Recording = false
     Macro.Playing = false
     Macro.Loop = false
     Macro.Data = {}
     Macro.RecordStart = 0
+    Macro.RecordElapsed = 0
+    Macro.RecordStartedAt = nil
+    Macro.PlayStartedAt = nil
+    Macro.PlayElapsed = 0
+    Macro.CurrentEvent = 0
+    Macro._TimeTicker = nil
     Macro.HeldKeys = { W = false, A = false, S = false, D = false }
     Macro.LastEventSig = nil
     Macro.LastEventTime = -math.huge
@@ -964,14 +906,12 @@ do
     Macro.Character = nil
     Macro.Humanoid = nil
 
-    -- КЛАВИШИ (как в Macro.lua)
     local Keybinds = {
         RecordToggle = Enum.KeyCode.LeftBracket,
         PlayStop = Enum.KeyCode.RightBracket,
         Hide = Enum.KeyCode.F8
     }
 
-    -- НАСТРОЙКИ (как в Macro.lua)
     local DuplicateEventWindow = 0.015
     local KeybindCooldown = 0.25
     local CompensateInset = false
@@ -981,20 +921,71 @@ do
     local AutoStartPlayback = false
     local AutoStartDelay = 2
 
-    -- ФУНКЦИИ СТАТУСА
     function Macro.SetStatus(text)
+        if ConfigApplying then return end
         if Macro.Status then
             pcall(function() Macro.Status:SetDesc(text) end)
         end
     end
 
-    function Macro.UpdateCount()
-        if Macro.Count then
-            pcall(function() Macro.Count:SetDesc(string.format("%d/%d", #Macro.Data, 0)) end)
+    local function FormatMacroTime(seconds)
+        seconds = math.max(0, tonumber(seconds) or 0)
+        local h = math.floor(seconds / 3600)
+        local m = math.floor((seconds % 3600) / 60)
+        local s = math.floor(seconds % 60)
+        if h > 0 then
+            return string.format("%dh %02dm %02ds", h, m, s)
+        elseif m > 0 then
+            return string.format("%dm %02ds", m, s)
+        else
+            return string.format("%ds", s)
         end
     end
 
-    -- СИГНАТУРА
+    function Macro.UpdateCount(current)
+        local total = #Macro.Data
+        local currentEvent = math.clamp(tonumber(current) or Macro.CurrentEvent or 0, 0, total)
+        local recordedTime = tonumber(Macro.RecordElapsed) or 0
+        if total > 0 then
+            local last = Macro.Data[total]
+            if last and tonumber(last.Time) then
+                recordedTime = math.max(recordedTime, tonumber(last.Time))
+            end
+        end
+        local currentTime = 0
+        if Macro.PlayStartedAt then
+            currentTime = math.max(0, os.clock() - Macro.PlayStartedAt)
+        elseif Macro.Recording and Macro.RecordStartedAt then
+            currentTime = math.max(0, os.clock() - Macro.RecordStartedAt)
+        end
+        Macro.CurrentEvent = currentEvent
+        if Macro.Count then
+            pcall(function()
+                Macro.Count:SetDesc(
+                    string.format(
+                        "Time: %s / %s\n%d/%d",
+                        FormatMacroTime(recordedTime),
+                        FormatMacroTime(currentTime),
+                        total,
+                        currentEvent
+                    )
+                )
+            end)
+        end
+    end
+
+    function Macro.StartTimeTicker()
+        if Macro._TimeTicker then return end
+        Macro._TimeTicker = task.spawn(function()
+            while Macro.Recording or Macro.Playing do
+                Macro.UpdateCount(Macro.CurrentEvent)
+                task.wait(0.10)
+            end
+            Macro._TimeTicker = nil
+            Macro.UpdateCount(Macro.CurrentEvent)
+        end)
+    end
+
     local function EventSignature(data)
         return table.concat({
             tostring(data.Type),
@@ -1005,25 +996,31 @@ do
         }, "|")
     end
 
-    -- ДОБАВЛЕНИЕ СОБЫТИЯ
     local function AddEvent(data)
         if not Macro.Recording then return end
         local now = os.clock() - Macro.RecordStart
         local sig = EventSignature(data)
-        if sig == Macro.LastEventSig and (now - Macro.LastEventTime) < DuplicateEventWindow then return end
-        Macro.LastEventSig = sig
-        Macro.LastEventTime = now
+        -- Mouse clicks are atomic: never suppress two legitimate clicks
+        -- just because they happen at the same pixel in quick succession.
+        if data.Type ~= "Mouse" then
+            if sig == Macro.LastEventSig and (now - Macro.LastEventTime) < DuplicateEventWindow then return end
+            Macro.LastEventSig = sig
+            Macro.LastEventTime = now
+        end
         data.Time = now
         table.insert(Macro.Data, data)
-        Macro.UpdateCount()
+        Macro.UpdateCount(0)
     end
 
-    -- ЗАПИСЬ
     function Macro.StartRecording()
         if Macro.Playing then return end
         Macro.Data = {}
         Macro.RecordStart = os.clock()
+        Macro.RecordStartedAt = Macro.RecordStart
+        Macro.RecordElapsed = 0
+        Macro.CurrentEvent = 0
         Macro.Recording = true
+        Macro.StartTimeTicker()
         Macro.LastEventSig = nil
         Macro.LastEventTime = -math.huge
         Macro.HeldKeys.W = false
@@ -1035,22 +1032,27 @@ do
         notifyUser("Macro Recorder", "Recording started — press [", 2)
     end
 
+    Macro._LastAutoSave = 0
+
     function Macro.StopRecording()
         if not Macro.Recording then return end
         Macro.Recording = false
+        if Macro.RecordStartedAt then
+            Macro.RecordElapsed = math.max(0, os.clock() - Macro.RecordStartedAt)
+            Macro.RecordStartedAt = nil
+        end
         Macro.HeldKeys.W = false
         Macro.HeldKeys.A = false
         Macro.HeldKeys.S = false
         Macro.HeldKeys.D = false
         Macro.SetStatus("Recording stopped (" .. #Macro.Data .. " events)")
-        notifyUser("Macro Recorder", "Recorded events: " .. #Macro.Data, 3)
+        notifyUser("Macro Recorder", "Recording stopped • Events: " .. #Macro.Data, 3)
     end
 
     function Macro.ToggleRecording()
         if Macro.Recording then Macro.StopRecording() else Macro.StartRecording() end
     end
 
-    -- НАПРАВЛЕНИЕ
     local function GetDirection()
         local dir = Vector3.zero
         if Macro.HeldKeys.W then dir = dir + Vector3.new(0, 0, -1) end
@@ -1060,11 +1062,9 @@ do
         return dir
     end
 
-    -- ОБРАБОТКА КЛАВИШ
     local function HandleRecordedAction(Action)
         local key = Action.Key
         local state = Action.State
-
         if key == Enum.KeyCode.W then
             Macro.HeldKeys.W = state == "Began"
         elseif key == Enum.KeyCode.A then
@@ -1087,28 +1087,82 @@ do
         end
     end
 
-    -- ПОИСК CLICKDETECTOR
-    local SearchRadius = 40
-    local SearchStep = 8
+    -- Working click engine ported from Macro(5).lua.
+    -- GUI buttons are handled BEFORE 3D ClickDetectors.
+    local SearchRadius = 24
+    local SearchStep = 1
+    local MaxPierceIterations = 40
 
     local function RaycastAt(x, y)
         local Camera = workspace.CurrentCamera
         if not Camera then return nil end
-        local ok, unitRay = pcall(function() return Camera:ViewportPointToRay(x, y) end)
+
+        local ok, unitRay = pcall(function()
+            return Camera:ScreenPointToRay(x, y)
+        end)
         if not ok or not unitRay then return nil end
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
+
+        local excluded = {}
         local char = LocalPlayer.Character
-        if char then params.FilterDescendantsInstances = { char } end
-        local okRay, result = pcall(function() return workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, params) end)
-        if not okRay then return nil end
+        if char then table.insert(excluded, char) end
+
+        local origin = unitRay.Origin
+        local direction = unitRay.Direction * 1000
+        local result = nil
+
+        for _ = 1, MaxPierceIterations do
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = excluded
+
+            local okRay, hit = pcall(function()
+                return workspace:Raycast(origin, direction, params)
+            end)
+            if not okRay or not hit or not hit.Instance then
+                result = hit
+                break
+            end
+
+            local inst = hit.Instance
+            local hasDetector = inst:FindFirstChildOfClass("ClickDetector") ~= nil
+            local isInvisible = inst:IsA("BasePart") and inst.Transparency >= 1
+
+            if hasDetector or not isInvisible then
+                result = hit
+                break
+            end
+
+            if Settings.MacroDebugClicks then
+                print("[MACRO][DEBUG] Pierced invisible blocker: " .. inst:GetFullName())
+            end
+            table.insert(excluded, inst)
+            result = hit
+        end
+
         return result
     end
 
     local function FindDetectorOnInstance(inst)
         local detector = inst:FindFirstChildOfClass("ClickDetector")
         if detector then return detector end
-        local parent = inst.Parent
+
+        local immediateParent = inst.Parent
+        if immediateParent and immediateParent ~= workspace then
+            detector = immediateParent:FindFirstChildOfClass("ClickDetector")
+            if detector then return detector end
+
+            local ok, found = pcall(function()
+                for _, descendant in ipairs(immediateParent:GetDescendants()) do
+                    if descendant:IsA("ClickDetector") then
+                        return descendant
+                    end
+                end
+                return nil
+            end)
+            if ok and found then return found end
+        end
+
+        local parent = immediateParent and immediateParent.Parent or nil
         while parent and parent ~= workspace do
             detector = parent:FindFirstChildOfClass("ClickDetector")
             if detector then return detector end
@@ -1163,7 +1217,10 @@ do
             if Settings.MacroDebugClicks then warn("[MACRO][DEBUG] fireclickdetector is not available") end
             return false
         end
-        local ok, err = pcall(function() fireclickdetector(detector, 0, "MouseClick") end)
+
+        local ok, err = pcall(function()
+            fireclickdetector(detector, 0, "MouseClick")
+        end)
         if Settings.MacroDebugClicks then
             if ok then print("[MACRO][DEBUG] fireclickdetector sent successfully")
             else warn("[MACRO][DEBUG] fireclickdetector raised an error:", err) end
@@ -1171,52 +1228,164 @@ do
         return ok
     end
 
-    -- ОТПРАВКА КЛИКА
-    local function SendRecordedMouse(Action)
-        local x = tonumber(Action.X) or 0
-        local y = tonumber(Action.Y) or 0
+    local function TryFireGuiButton(x, y, isRight)
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not playerGui then return false end
 
-        if Settings.MacroCompensateInset then
-            pcall(function()
-                local inset = GuiService:GetGuiInset()
-                y = y - inset.Y
-            end)
-        end
-
-        local detector = GetClickDetectorAt(x, y)
-        if detector then
-            if Action.State == "Began" then
-                TryFireClickDetector(detector)
-            end
-            return
-        end
-
-        pcall(function()
-            local button = Action.Key == Enum.UserInputType.MouseButton2 and 1 or 0
-            local pressed = Action.State == "Began"
-            VirtualInputManager:SendMouseMoveEvent(x - 1, y, game)
-            RunService.Heartbeat:Wait()
-            VirtualInputManager:SendMouseMoveEvent(x, y, game)
-            RunService.Heartbeat:Wait()
-            RunService.Heartbeat:Wait()
-            VirtualInputManager:SendMouseButtonEvent(x, y, button, pressed, game, 0)
-            if Settings.MacroDebugClicks then
-                print("[MACRO] Virtual click at", x, y, pressed and "down" or "up")
-            end
+        local ok, guiObjects = pcall(function()
+            return playerGui:GetGuiObjectsAtPosition(x, y)
         end)
+        if not ok or not guiObjects then return false end
+
+        -- GetGuiObjectsAtPosition is already ordered by GUI hit priority.
+        -- Use the first active visible GuiButton at the exact recorded pixel.
+        for _, obj in ipairs(guiObjects) do
+            if obj:IsA("GuiButton") and obj.Visible and obj.Active then
+                if type(firesignal) == "function" then
+                    local fired = false
+                    if isRight then
+                        pcall(function() firesignal(obj.MouseButton2Click); fired = true end)
+                    else
+                        pcall(function() firesignal(obj.MouseButton1Click); fired = true end)
+                        if not fired then
+                            pcall(function() firesignal(obj.Activated); fired = true end)
+                        end
+                    end
+                    if fired then return true end
+                end
+
+                -- If signals are unavailable, send one complete physical click.
+                pcall(function() VirtualInputManager:SendMouseMoveEvent(x, y, game) end)
+                RunService.Heartbeat:Wait()
+                pcall(function() VirtualInputManager:SendMouseButtonEvent(x, y, isRight and 1 or 0, true, game, 0) end)
+                RunService.Heartbeat:Wait()
+                pcall(function() VirtualInputManager:SendMouseButtonEvent(x, y, isRight and 1 or 0, false, game, 0) end)
+                return true
+            end
+        end
+
+        -- Small 1-pixel search only for UI scaling/rounding differences.
+        -- This is intentionally much tighter than the 3D detector search.
+        for r = 1, 12 do
+            for dx = -r, r do
+                for _, dy in ipairs({-r, r}) do
+                    local px, py = x + dx, y + dy
+                    local ok2, objs = pcall(function() return playerGui:GetGuiObjectsAtPosition(px, py) end)
+                    if ok2 and objs then
+                        for _, obj in ipairs(objs) do
+                            if obj:IsA("GuiButton") and obj.Visible and obj.Active then
+                                if type(firesignal) == "function" then
+                                    local fired = false
+                                    if isRight then
+                                        pcall(function() firesignal(obj.MouseButton2Click); fired = true end)
+                                    else
+                                        pcall(function() firesignal(obj.MouseButton1Click); fired = true end)
+                                        if not fired then pcall(function() firesignal(obj.Activated); fired = true end) end
+                                    end
+                                    if fired then return true end
+                                end
+                                pcall(function() VirtualInputManager:SendMouseMoveEvent(px, py, game) end)
+                                RunService.Heartbeat:Wait()
+                                pcall(function() VirtualInputManager:SendMouseButtonEvent(px, py, isRight and 1 or 0, true, game, 0) end)
+                                RunService.Heartbeat:Wait()
+                                pcall(function() VirtualInputManager:SendMouseButtonEvent(px, py, isRight and 1 or 0, false, game, 0) end)
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return false
     end
 
-    -- ВОСПРОИЗВЕДЕНИЕ
+    local function IsClickOnOwnUI(x, y)
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not playerGui then return false end
+        local ok, guiObjects = pcall(function()
+            return playerGui:GetGuiObjectsAtPosition(x, y)
+        end)
+        if not ok or not guiObjects then return false end
+
+        local root = Window and Window.Root
+        if not root then return false end
+        for _, obj in ipairs(guiObjects) do
+            local okCheck, result = pcall(function()
+                return obj:IsDescendantOf(root)
+            end)
+            if okCheck and result then return true end
+        end
+        return false
+    end
+
+    -- Zoom-independent 3D target helpers. Screen coordinates remain exact for GUI,
+    -- while 3D clicks remember the part that was actually under the cursor.
+    local function GetInstanceByFullName(fullName)
+        if type(fullName) ~= "string" or fullName == "" then return nil end
+        local current = game
+        for segment in string.gmatch(fullName, "[^%.]+") do
+            if segment == "game" then
+                current = game
+            else
+                local nextObj = current and current:FindFirstChild(segment)
+                if not nextObj then return nil end
+                current = nextObj
+            end
+        end
+        return current
+    end
+
+    local function Capture3DTarget(x, y)
+        local result = RaycastAt(x, y)
+        if not result or not result.Instance then return nil end
+        local inst = result.Instance
+        local detector = FindDetectorOnInstance(inst)
+        if not detector then return nil end
+        local localPoint
+        pcall(function()
+            if inst:IsA("BasePart") then
+                localPoint = inst.CFrame:PointToObjectSpace(result.Position)
+            end
+        end)
+        return {
+            Path = inst:GetFullName(),
+            LocalX = localPoint and localPoint.X or 0,
+            LocalY = localPoint and localPoint.Y or 0,
+            LocalZ = localPoint and localPoint.Z or 0,
+        }
+    end
+
+    -- TinyTask-style mouse playback:
+    -- use the EXACT recorded screen pixel and generate one complete click
+    -- (move -> down -> up). The recorder stores only one mouse event per click.
+    -- Pure 2D TinyTask-style playback.
+    -- Camera, zoom, raycasts and GUI hit-tests are never consulted.
+    local function SendRecordedMouse(Action)
+        if Action.State ~= "Began" then return end
+        local x, y = tonumber(Action.X), tonumber(Action.Y)
+        if not x or not y then return end
+        x, y = math.floor(x + 0.5), math.floor(y + 0.5)
+        local button = (Action.Key == Enum.UserInputType.MouseButton2) and 1 or 0
+        pcall(function() VirtualInputManager:SendMouseMoveEvent(x, y, game) end)
+        RunService.Heartbeat:Wait()
+        pcall(function() VirtualInputManager:SendMouseButtonEvent(x, y, button, true, game, 0) end)
+        RunService.Heartbeat:Wait()
+        pcall(function() VirtualInputManager:SendMouseButtonEvent(x, y, button, false, game, 0) end)
+    end
+
     function Macro.Play()
         if Macro.Recording or Macro.Playing then return end
         if #Macro.Data == 0 then
             notifyUser("Macro Recorder", "Macro is empty.", 2)
             return
         end
-
         Macro.Playing = true
+        Macro.PlayStartedAt = os.clock()
+        Macro.PlayElapsed = 0
+        Macro.CurrentEvent = 0
+        Macro.StartTimeTicker()
         Macro.SetStatus("Playing...")
-
+        notifyUser("Macro Recorder", "Playback started • Events: " .. #Macro.Data, 2)
         task.spawn(function()
             repeat
                 local _PreviousMacroTime = 0
@@ -1224,45 +1393,43 @@ do
                 Macro.HeldKeys.A = false
                 Macro.HeldKeys.S = false
                 Macro.HeldKeys.D = false
-
-                for _, Action in ipairs(Macro.Data) do
+                for eventIndex, Action in ipairs(Macro.Data) do
                     if not Macro.Playing then break end
+                    Macro.CurrentEvent = eventIndex
+                    Macro.UpdateCount(eventIndex)
                     local PreviousTime = _PreviousMacroTime or 0
                     local Delay = math.max(0, Action.Time - PreviousTime)
                     _PreviousMacroTime = Action.Time
-
                     if Delay > 0 then
                         local EndWait = os.clock() + Delay
                         while Macro.Playing and os.clock() < EndWait do
                             RunService.Heartbeat:Wait()
                         end
                     end
-
                     if not Macro.Playing then break end
-
                     if Action.Type == "Keyboard" then
                         HandleRecordedAction(Action)
                     elseif Action.Type == "Mouse" then
                         SendRecordedMouse(Action)
                     end
                 end
-
             until not Settings.MacroLoop or not Macro.Playing
-
             Macro.HeldKeys.W = false
             Macro.HeldKeys.A = false
             Macro.HeldKeys.S = false
             Macro.HeldKeys.D = false
-
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum then hum:Move(Vector3.zero, false) end
-
+            if Macro.PlayStartedAt then
+                Macro.PlayElapsed = math.max(0, os.clock() - Macro.PlayStartedAt)
+                Macro.PlayStartedAt = nil
+            end
             Macro.Playing = false
+            Macro.UpdateCount(#Macro.Data)
             Macro.SetStatus("Ready.")
         end)
     end
 
-    -- СОХРАНЕНИЕ
     local function SerializeMacro()
         local out = {}
         for _, action in ipairs(Macro.Data) do
@@ -1271,7 +1438,7 @@ do
                 State = action.State,
                 Time = action.Time,
                 X = action.X,
-                Y = action.Y
+                Y = action.Y,
             }
             if typeof(action.Key) == "EnumItem" then
                 entry.Key = action.Key.Name
@@ -1289,7 +1456,7 @@ do
                 State = entry.State,
                 Time = entry.Time,
                 X = entry.X,
-                Y = entry.Y
+                Y = entry.Y,
             }
             if entry.Type == "Keyboard" and entry.Key then
                 action.Key = Enum.KeyCode[entry.Key]
@@ -1333,67 +1500,6 @@ do
         return nil
     end
 
-    function Macro.SetBind(bindName, keyCode)
-        if not bindName or not keyCode or keyCode == Enum.KeyCode.Unknown then return end
-        MacroBinds[bindName] = keyCode
-        pcall(function()
-            local current = {}
-            if isfile(SettingsFile) then
-                local raw = readfile(SettingsFile)
-                local ok, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
-                if ok and type(decoded) == "table" then current = decoded end
-            end
-            current.MacroBinds = {
-                Record = macroBindText(MacroBinds.Record),
-                Stop = macroBindText(MacroBinds.Stop),
-                Play = macroBindText(MacroBinds.Play),
-                Save = macroBindText(MacroBinds.Save),
-            }
-            writefile(SettingsFile, HttpService:JSONEncode(current))
-        end)
-    end
-
-    function Macro.SaveByBind()
-        local name = macroNameInput ~= "" and macroNameInput or Macro.SelectedName
-        if not name or name == "" then
-            notifyUser("Macro Recorder", "Enter Macro Name or select a macro first.", 3)
-            return false
-        end
-
-        if Macro.Recording then
-            Macro.StopRecording()
-        end
-        if Macro.Playing then
-            Macro.Playing = false
-            Macro.SetStatus("Playback stopped.")
-        end
-
-        local ok = Macro.SaveNamed(name)
-        if ok then
-            Macro.SelectedName = name
-            Macro.RememberLast(name)
-            if RefreshMacroDropdown then pcall(RefreshMacroDropdown) end
-        end
-        return ok
-    end
-
-    -- Сохраняет текущий снимок макроса даже во время записи.
-    -- Используется Auto Save, чтобы при неожиданном кике/закрытии не потерять запись.
-    function Macro.AutoSaveSnapshot(reason)
-        local name = macroNameInput ~= "" and macroNameInput or Macro.SelectedName
-        if not name or name == "" or #Macro.Data == 0 then return false end
-        local ok, err = pcall(function()
-            if not isfolder(SaveFolder) then makefolder(SaveFolder) end
-            writefile(GetMacroPath(name), HttpService:JSONEncode(SerializeMacro()))
-        end)
-        if ok and reason then
-            Macro.SetStatus("Auto-saved \"" .. name .. "\"" .. (reason and (" (" .. reason .. ")") or ""))
-        elseif not ok then
-            warn("[MACRO] AutoSave failed:", err)
-        end
-        return ok
-    end
-
     function Macro.SaveNamed(name)
         if not name or name == "" then
             notifyUser("Macro Recorder", "Enter a name first.", 2)
@@ -1414,38 +1520,11 @@ do
         end)
         if ok then
             Macro.SetStatus("Macro saved as \"" .. name .. "\" (" .. #Macro.Data .. " events).")
-            notifyUser("Macro Recorder", "Saved as \"" .. name .. "\" (" .. #Macro.Data .. " events).", 2)
         else
             warn("[MACRO] Failed to save macro:", err)
             notifyUser("Macro Recorder", "Failed to save macro: " .. tostring(err), 4)
         end
         return ok
-    end
-
-    function Macro.AutoSaveCurrent()
-        if not Settings.MacroAutoSaveEnabled or #Macro.Data == 0 then return false end
-        local name = Macro.SelectedName
-        if (not name or name == "") and macroNameInput and macroNameInput ~= "" then name = macroNameInput end
-        if not name or name == "" then return false end
-        local ok = pcall(function()
-            if not isfolder(SaveFolder) then makefolder(SaveFolder) end
-            writefile(GetMacroPath(name), HttpService:JSONEncode(SerializeMacro()))
-        end)
-        if ok then
-            Macro.SelectedName = name
-            pcall(function() Macro.RememberLast(name) end)
-            task.defer(function() if RefreshMacroDropdown then pcall(RefreshMacroDropdown) end end)
-        end
-        return ok
-    end
-
-    function Macro.StartAutoSave()
-        if Macro._AutoSaveThread then return end
-        Macro._AutoSaveThread = task.spawn(function()
-            while task.wait(math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3)) do
-                if Settings.MacroAutoSaveEnabled then Macro.AutoSaveCurrent() end
-            end
-        end)
     end
 
     function Macro.LoadNamed(name, silent)
@@ -1469,7 +1548,6 @@ do
             Macro.UpdateCount()
             Macro.SetStatus("Loaded \"" .. name .. "\" (" .. #Macro.Data .. " events).")
             if not silent then
-                notifyUser("Macro Recorder", "Loaded \"" .. name .. "\" (" .. #Macro.Data .. " events).", 2)
             end
             return true
         else
@@ -1487,22 +1565,81 @@ do
         local ok = pcall(function() if isfile(path) then delfile(path) end end)
         if ok then
             Macro.SetStatus("Removed saved macro \"" .. name .. "\".")
-            notifyUser("Macro Recorder", "Removed \"" .. name .. "\".", 2)
         else
             notifyUser("Macro Recorder", "Failed to remove \"" .. name .. "\".", 3)
         end
         return ok
     end
 
-    -- НАСТРОЙКА ВВОДА
-    local macroBindLastFire = {}
-    local MACRO_BIND_DEBOUNCE = 0.35
-
-    local function MacroBindAllowed(name)
-        local now = os.clock()
-        if now - (macroBindLastFire[name] or 0) < MACRO_BIND_DEBOUNCE then return false end
-        macroBindLastFire[name] = now
+    function Macro.SetBind(bindName, keyCode)
+        if not MacroBinds[bindName] or not keyCode then return false end
+        MacroBinds[bindName] = keyCode
+        if type(updateBindLabel) == "function" then pcall(updateBindLabel) end
         return true
+    end
+
+    -- FIX 1: Macro.RefreshList placeholder so SaveByBind doesn't error
+    Macro.RefreshList = nil
+
+    function Macro.SaveByBind()
+        if Macro.Recording then
+            Macro.StopRecording()
+        end
+        if Macro.Playing then
+            Macro.Playing = false
+            Macro.PlayStartedAt = nil
+            Macro.SetStatus("Playback stopped.")
+        end
+        local name = Macro.SelectedName
+        if (not name or name == "") and macroNameInput and macroNameInput ~= "" then
+            name = macroNameInput
+        end
+        if not name or name == "" then
+            notifyUser("Macro Recorder", "Enter a macro name first.", 2)
+            return false
+        end
+        local ok = Macro.SaveNamed(name)
+        if ok then
+            Macro.SelectedName = name
+            Macro.RememberLast(name)
+            -- FIX 1: properly call RefreshList if it exists
+            if Macro.RefreshList then
+                task.defer(function()
+                    pcall(Macro.RefreshList)
+                end)
+            end
+        end
+        return ok
+    end
+
+    -- When Camera Lock is enabled together with Walking (or Shiking + Walking),
+    -- the movement system is generated by the bypass macro itself. Do not record
+    -- WASD/Space from the physical keyboard in that mode, otherwise playback
+    -- would contain duplicate walking/jump events.
+    local function ShouldIgnoreMovementRecording(keyCode)
+        if not Settings.AntiMacro then
+            return false
+        end
+
+        local modes = Settings.MacroModes or {}
+        local walkingEnabled = false
+
+        for _, mode in ipairs(modes) do
+            if mode == "Walking" then
+                walkingEnabled = true
+                break
+            end
+        end
+
+        if not walkingEnabled then
+            return false
+        end
+
+        return keyCode == Enum.KeyCode.W
+            or keyCode == Enum.KeyCode.A
+            or keyCode == Enum.KeyCode.S
+            or keyCode == Enum.KeyCode.D
+            or keyCode == Enum.KeyCode.Space
     end
 
     function Macro.SetupInput()
@@ -1510,60 +1647,105 @@ do
         if inputEndedConn then inputEndedConn:Disconnect() end
 
         inputBeganConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            -- Проверяем все текущие бинды ПЕРВЫМ делом, до записи
+            -- Это работает даже если бинды были изменены через SetBind
+            local function isBindKey(kc)
+                for _, bind in pairs(MacroBinds) do
+                    if bind == kc then return true end
+                end
+                return false
+            end
 
-            if gameProcessed or not Macro.Recording then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard and isBindKey(input.KeyCode) then
+                if input.KeyCode == MacroBinds.Record then
+                    local now = os.clock()
+                    if now - Macro.LastRecTogTime < KeybindCooldown then return end
+                    Macro.LastRecTogTime = now
+                    Macro.ToggleRecording()
+                    return
+                end
+                if input.KeyCode == MacroBinds.Play then
+                    local now = os.clock()
+                    if now - Macro.LastPlayStopTime < KeybindCooldown then return end
+                    Macro.LastPlayStopTime = now
+                    if Macro.Playing then
+                        Macro.Playing = false
+                        Macro.SetStatus("Playback stopped.")
+                    elseif not Macro.Recording then
+                        Macro.Play()
+                    end
+                    return
+                end
+                if input.KeyCode == MacroBinds.Save then
+                    local now = os.clock()
+                    if now - (Macro.LastSaveTime or -math.huge) < KeybindCooldown then return end
+                    Macro.LastSaveTime = now
+                    Macro.SaveByBind()
+                    return
+                end
+                -- неизвестный бинд — всё равно не пишем в макрос
+                return
+            end
 
+            if not Macro.Recording then return end
+
+            -- Клавиатура: не пишем если gameProcessed
             if input.UserInputType == Enum.UserInputType.Keyboard then
-                AddEvent({
-                    Type = "Keyboard",
-                    Key = input.KeyCode,
-                    State = "Began"
-                })
+                if gameProcessed then return end
+
+                -- Camera Lock + Walking owns movement input, so don't put
+                -- physical WASD/jump into the recorded macro.
+                if ShouldIgnoreMovementRecording(input.KeyCode) then
+                    return
+                end
+
+                AddEvent({ Type = "Keyboard", Key = input.KeyCode, State = "Began" })
                 if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = true
                 elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = true
                 elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = true
                 elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = true end
-
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2 then
-                AddEvent({
-                    Type = "Mouse",
-                    Key = input.UserInputType,
-                    State = "Began",
-                    X = input.Position.X,
-                    Y = input.Position.Y
-                })
+                -- Record game GUI clicks even when gameProcessed=true, but never record this macro window itself.
+                if not IsClickOnOwnUI(input.Position.X, input.Position.Y) then
+                    -- TinyTask-style: record the REAL 2D cursor position only.
+                    -- Do not raycast, do not resolve a 3D target, and do not adjust
+                    -- the point according to the camera. The exact cursor pixel is
+                    -- the only mouse data that is recorded.
+                    local mousePos = UserInputService:GetMouseLocation()
+                    local x, y = mousePos.X, mousePos.Y
+                    AddEvent({
+                        Type = "Mouse", Key = input.UserInputType, State = "Began",
+                        X = x, Y = y
+                    })
+                end
             end
         end)
 
         inputEndedConn = UserInputService.InputEnded:Connect(function(input, gameProcessed)
-            if gameProcessed or not Macro.Recording then return end
+            if not Macro.Recording then return end
 
             if input.UserInputType == Enum.UserInputType.Keyboard then
-                AddEvent({
-                    Type = "Keyboard",
-                    Key = input.KeyCode,
-                    State = "Ended"
-                })
+                if gameProcessed then return end
+
+                -- Same filter for key release events.
+                if ShouldIgnoreMovementRecording(input.KeyCode) then
+                    return
+                end
+
+                AddEvent({ Type = "Keyboard", Key = input.KeyCode, State = "Ended" })
                 if input.KeyCode == Enum.KeyCode.W then Macro.HeldKeys.W = false
                 elseif input.KeyCode == Enum.KeyCode.A then Macro.HeldKeys.A = false
                 elseif input.KeyCode == Enum.KeyCode.S then Macro.HeldKeys.S = false
                 elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = false end
-
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2 then
-                AddEvent({
-                    Type = "Mouse",
-                    Key = input.UserInputType,
-                    State = "Ended",
-                    X = input.Position.X,
-                    Y = input.Position.Y
-                })
+                -- Mouse is atomic: one physical click = one recorded event.
+                return
             end
         end)
     end
 
-    -- ДВИЖЕНИЕ
     function Macro.StartMovement()
         if renderConn then return end
         renderConn = RunService.RenderStepped:Connect(function()
@@ -1589,7 +1771,6 @@ do
         end)
     end
 
-    -- ОСТАНОВКА ВСЕГО
     function Macro.StopAll()
         Macro.Recording = false
         Macro.Playing = false
@@ -1604,22 +1785,6 @@ do
         if hum then hum:Move(Vector3.zero, false) end
     end
 
-    -- СОХРАНЕНИЕ НАСТРОЕК
-    function Macro.LoadBinds()
-        pcall(function()
-            if not isfile(SettingsFile) then return end
-            local raw = readfile(SettingsFile)
-            local decoded = HttpService:JSONDecode(raw)
-            local b = decoded and decoded.MacroBinds
-            if type(b) ~= "table" then return end
-            for name, value in pairs(b) do
-                if MacroBinds[name] and type(value) == "string" and Enum.KeyCode[value] then
-                    MacroBinds[name] = Enum.KeyCode[value]
-                end
-            end
-        end)
-    end
-
     function Macro.SaveSettings()
         pcall(function()
             if not isfolder(SaveFolder) then makefolder(SaveFolder) end
@@ -1631,16 +1796,13 @@ do
                 CompensateInset = Settings.MacroCompensateInset,
                 DebugClicks = Settings.MacroDebugClicks,
                 Loop = Settings.MacroLoop,
-                AutoSaveEnabled = Settings.MacroAutoSaveEnabled,
-                AutoSaveInterval = Settings.MacroAutoSaveInterval,
-                MacroAutoSave = Settings.MacroAutoSave,
-                MacroAutoSaveInterval = Settings.MacroAutoSaveInterval,
                 MacroBinds = {
-                    Record = macroBindText(MacroBinds.Record),
-                    Stop = macroBindText(MacroBinds.Stop),
-                    Play = macroBindText(MacroBinds.Play),
-                    Save = macroBindText(MacroBinds.Save),
+                    Record = MacroBindName(MacroBinds.Record),
+                                        Play = MacroBindName(MacroBinds.Play),
+                    Save = MacroBindName(MacroBinds.Save),
                 },
+                AutoSaveEnabled = Settings.MacroAutoSaveEnabled or false,
+                AutoSaveInterval = Settings.MacroAutoSaveInterval or 3,
             }))
         end)
     end
@@ -1657,14 +1819,13 @@ do
         if data.CompensateInset ~= nil then Settings.MacroCompensateInset = data.CompensateInset end
         if data.DebugClicks ~= nil then Settings.MacroDebugClicks = data.DebugClicks end
         if data.Loop ~= nil then Settings.MacroLoop = data.Loop end
+        -- FIX 2: was "Settings.MacroAutoSaveEnabled = false" (wrong) and missing end
         if data.AutoSaveEnabled ~= nil then Settings.MacroAutoSaveEnabled = data.AutoSaveEnabled end
         if data.AutoSaveInterval ~= nil then Settings.MacroAutoSaveInterval = tonumber(data.AutoSaveInterval) or 3 end
-        if data.MacroAutoSave ~= nil then Settings.MacroAutoSave = data.MacroAutoSave end
-        if data.MacroAutoSaveInterval ~= nil then Settings.MacroAutoSaveInterval = tonumber(data.MacroAutoSaveInterval) or 3 end
         if type(data.MacroBinds) == "table" then
-            for name, value in pairs(data.MacroBinds) do
-                if MacroBinds[name] and type(value) == "string" and Enum.KeyCode[value] then
-                    MacroBinds[name] = Enum.KeyCode[value]
+            for bindName, keyName in pairs(data.MacroBinds) do
+                if MacroBinds[bindName] and type(keyName) == "string" and Enum.KeyCode[keyName] then
+                    MacroBinds[bindName] = Enum.KeyCode[keyName]
                 end
             end
         end
@@ -1672,43 +1833,16 @@ do
     Macro.LoadSettings()
 end
 
--- AUTO SAVE: периодически сохраняет снимок текущего макроса, если имя указано.
--- Это позволяет сохранить почти всю запись даже при внезапном кике/закрытии.
-task.spawn(function()
-    while task.wait(math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3)) do
-        if Settings.MacroAutoSave and Macro.Recording then
-            Macro.AutoSaveSnapshot("auto")
-        end
-    end
-end)
-
--- Дополнительная попытка сохранить последний снимок при удалении игрока.
-pcall(function()
-    LocalPlayer.AncestryChanged:Connect(function(_, parent)
-        if parent == nil and Settings.MacroAutoSave then
-            Macro.AutoSaveSnapshot("player removed")
-        end
-    end)
-end)
-pcall(function()
-    Players.PlayerRemoving:Connect(function(player)
-        if player == LocalPlayer and Settings.MacroAutoSave then
-            Macro.AutoSaveSnapshot("player removing")
-        end
-    end)
-end)
-
 -- ИНИЦИАЛИЗАЦИЯ
 Macro.SetupInput()
 Macro.StartMovement()
-Macro.SetStatus("Ready.\n[ — record\n] — stop\n\\ — play / stop")
+Macro.SetStatus("Ready.")
 Macro.UpdateCount()
 
 -- ===========================================================
 -- VISUAL EFFECTS MODULES
 -- ===========================================================
 
--- LIGHTING EFFECTS MODULE
 local LightingEffects = {}
 do
     local state = {
@@ -1820,10 +1954,9 @@ do
     }
 end
 
--- PLAYER AURA MODULE
 local PlayerAura = {}
 do
-    local settings = {
+    local auraSettings = {
         Enabled = false,
         Color = Color3.fromRGB(180, 120, 255),
         Count = 40,
@@ -1861,11 +1994,11 @@ do
 
         local em = Instance.new("ParticleEmitter")
         em.Parent = att
-        em.Color = ColorSequence.new(settings.Color)
+        em.Color = ColorSequence.new(auraSettings.Color)
         em.Size = NumberSequence.new({
             NumberSequenceKeypoint.new(0, 0),
-            NumberSequenceKeypoint.new(0.3, settings.BaseSize),
-            NumberSequenceKeypoint.new(0.7, settings.BaseSize),
+            NumberSequenceKeypoint.new(0.3, auraSettings.BaseSize),
+            NumberSequenceKeypoint.new(0.7, auraSettings.BaseSize),
             NumberSequenceKeypoint.new(1, 0),
         })
         em.Transparency = NumberSequence.new({
@@ -1876,8 +2009,8 @@ do
         })
         em.Rate = 12
         em.Speed = NumberRange.new(0, 0.5)
-        em.Lifetime = NumberRange.new(settings.Lifetime * 0.6, settings.Lifetime)
-        em.LightEmission = settings.Glow
+        em.Lifetime = NumberRange.new(auraSettings.Lifetime * 0.6, auraSettings.Lifetime)
+        em.LightEmission = auraSettings.Glow
         em.LightInfluence = 0
         em.ZOffset = -1
         em.RotSpeed = NumberRange.new(-30, 30)
@@ -1896,16 +2029,16 @@ do
 
     local function startVisuals()
         destroyVisuals()
-        if not settings.Enabled then return end
+        if not auraSettings.Enabled then return end
 
         folder = Instance.new("Folder")
         folder.Name = "PlayerAuraParticles"
         folder.Parent = workspace
 
-        local perRing = math.max(3, math.floor(settings.Count / settings.RingCount))
+        local perRing = math.max(3, math.floor(auraSettings.Count / auraSettings.RingCount))
         local ringParts = {}
 
-        for ring = 1, settings.RingCount do
+        for ring = 1, auraSettings.RingCount do
             ringParts[ring] = {}
             for i = 1, perRing do
                 local part = makeOrbitPart()
@@ -1915,17 +2048,17 @@ do
 
         local t0 = tick()
         heartbeatConn = RunService.Heartbeat:Connect(function()
-            if not settings.Enabled then return end
+            if not auraSettings.Enabled then return end
             local hrp = getHRP()
             if not hrp then return end
             local elapsed = tick() - t0
             local center = hrp.Position
 
-            for ring = 1, settings.RingCount do
-                local ringRadius = settings.Radius * (0.6 + (ring - 1) * 0.4)
-                local ringHeight = settings.Height + (ring - 1) * 1.2
+            for ring = 1, auraSettings.RingCount do
+                local ringRadius = auraSettings.Radius * (0.6 + (ring - 1) * 0.4)
+                local ringHeight = auraSettings.Height + (ring - 1) * 1.2
                 local dir = (ring % 2 == 0) and -1 or 1
-                local angularSpeed = settings.Speed * dir * (0.5 + ring * 0.15)
+                local angularSpeed = auraSettings.Speed * dir * (0.5 + ring * 0.15)
 
                 for _, entry in ipairs(ringParts[ring]) do
                     local angle = entry.angleBase + elapsed * angularSpeed
@@ -1944,37 +2077,37 @@ do
         if charAddedConn then return end
         charAddedConn = LocalPlayer.CharacterAdded:Connect(function()
             task.wait(0.5)
-            if settings.Enabled then startVisuals() end
+            if auraSettings.Enabled then startVisuals() end
         end)
     end
 
     function PlayerAura.SetEnabled(enabled)
-        settings.Enabled = enabled
+        auraSettings.Enabled = enabled
         if enabled then startVisuals() else destroyVisuals() end
     end
 
     function PlayerAura.SetColor(color)
-        settings.Color = color
+        auraSettings.Color = color
         for _, em in ipairs(emitters) do if em and em.Parent then em.Color = ColorSequence.new(color) end end
     end
 
     function PlayerAura.SetCount(count)
-        settings.Count = math.clamp(count, 4, 150)
-        if settings.Enabled then startVisuals() end
+        auraSettings.Count = math.clamp(count, 4, 150)
+        if auraSettings.Enabled then startVisuals() end
     end
 
-    function PlayerAura.SetRadius(radius) settings.Radius = radius end
-    function PlayerAura.SetHeight(height) settings.Height = height end
-    function PlayerAura.SetSpeed(speed) settings.Speed = speed end
+    function PlayerAura.SetRadius(radius) auraSettings.Radius = radius end
+    function PlayerAura.SetHeight(height) auraSettings.Height = height end
+    function PlayerAura.SetSpeed(speed) auraSettings.Speed = speed end
 
     function PlayerAura.SetGlow(glow)
-        settings.Glow = glow
+        auraSettings.Glow = glow
         for _, em in ipairs(emitters) do if em and em.Parent then em.LightEmission = glow end end
     end
 
     function PlayerAura.SetRingCount(count)
-        settings.RingCount = math.clamp(count, 1, 4)
-        if settings.Enabled then startVisuals() end
+        auraSettings.RingCount = math.clamp(count, 1, 4)
+        if auraSettings.Enabled then startVisuals() end
     end
 
     PlayerAura.ColorPresets = {
@@ -1985,10 +2118,9 @@ do
     }
 end
 
--- TRAIL EFFECT MODULE
 local TrailEffect = {}
 do
-    local settings = {
+    local trailSettings = {
         Enabled = false,
         Color1 = Color3.fromRGB(140, 60, 255),
         Color2 = Color3.fromRGB(60, 200, 255),
@@ -2008,8 +2140,7 @@ do
 
     local function create()
         destroy()
-        if not settings.Enabled then return end
-
+        if not trailSettings.Enabled then return end
         local character = LocalPlayer.Character
         if not character then return end
         local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -2028,13 +2159,10 @@ do
         local trail = Instance.new("Trail")
         trail.Attachment0 = att0
         trail.Attachment1 = att1
-        trail.Color = ColorSequence.new(settings.Color1, settings.Color2)
-        trail.Lifetime = settings.Lifetime
-        trail.WidthScale = NumberSequence.new(settings.WidthScale, 0)
-        trail.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0),
-            NumberSequenceKeypoint.new(1, 1)
-        })
+        trail.Color = ColorSequence.new(trailSettings.Color1, trailSettings.Color2)
+        trail.Lifetime = trailSettings.Lifetime
+        trail.WidthScale = NumberSequence.new(trailSettings.WidthScale, 0)
+        trail.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) })
         trail.LightEmission = 1
         trail.LightInfluence = 0
         trail.MinLength = 0.05
@@ -2048,29 +2176,31 @@ do
         if charAddedConn then return end
         charAddedConn = LocalPlayer.CharacterAdded:Connect(function()
             task.wait(0.5)
-            if settings.Enabled then create() end
+            if trailSettings.Enabled then create() end
         end)
     end
 
     function TrailEffect.SetEnabled(enabled)
-        settings.Enabled = enabled
+        trailSettings.Enabled = enabled
         if enabled then create() else destroy() end
     end
 
     function TrailEffect.SetColors(c1, c2)
-        settings.Color1, settings.Color2 = c1, c2
+        trailSettings.Color1, trailSettings.Color2 = c1, c2
         if trailInstance then trailInstance.Color = ColorSequence.new(c1, c2) end
     end
 
     function TrailEffect.SetLifetime(v)
-        settings.Lifetime = v
+        trailSettings.Lifetime = v
         if trailInstance then trailInstance.Lifetime = v end
     end
 
     function TrailEffect.SetWidth(v)
-        settings.WidthScale = v
+        trailSettings.WidthScale = v
         if trailInstance then trailInstance.WidthScale = NumberSequence.new(v, 0) end
-    end    TrailEffect.ColorPresets = {
+    end
+
+    TrailEffect.ColorPresets = {
         ["Purple-Blue"] = { Color3.fromRGB(140, 60, 255), Color3.fromRGB(60, 200, 255) },
         ["Red-Orange"]  = { Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 160, 60) },
         ["Green-Cyan"]  = { Color3.fromRGB(60, 255, 120), Color3.fromRGB(60, 220, 255) },
@@ -2079,10 +2209,9 @@ do
     }
 end
 
--- JUMP / LAND CIRCLE MODULE
 local JumpCircle = {}
 do
-    local settings = {
+    local jcSettings = {
         JumpEnabled = false,
         LandEnabled = false,
         Color = Color3.fromRGB(180, 120, 255),
@@ -2101,54 +2230,42 @@ do
         ring.CanCollide = false
         ring.CanQuery = false
         ring.Material = Enum.Material.Neon
-        ring.Color = settings.Color
+        ring.Color = jcSettings.Color
         ring.Transparency = 0.3
         ring.Orientation = Vector3.new(0, 0, 90)
         return ring
     end
 
     local function playRingAt(position)
-        local ring = getRingTemplate(settings.Size)
+        local ring = getRingTemplate(jcSettings.Size)
         ring.Position = position
         ring.Parent = workspace
-
         local tween = TweenService:Create(
             ring,
-            TweenInfo.new(settings.Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {
-                Size = Vector3.new(0.2, settings.Size * 3, settings.Size * 3),
-                Transparency = 1,
-            }
+            TweenInfo.new(jcSettings.Duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Size = Vector3.new(0.2, jcSettings.Size * 3, jcSettings.Size * 3), Transparency = 1 }
         )
         tween:Play()
-        tween.Completed:Connect(function()
-            ring:Destroy()
-        end)
+        tween.Completed:Connect(function() ring:Destroy() end)
     end
 
     local function hookCharacter(character)
-        for _, conn in ipairs(humanoidConns) do
-            if conn then conn:Disconnect() end
-        end
+        for _, conn in ipairs(humanoidConns) do if conn then conn:Disconnect() end end
         humanoidConns = {}
-
         local humanoid = character:WaitForChild("Humanoid", 5)
         local rootPart = character:WaitForChild("HumanoidRootPart", 5)
         if not humanoid or not rootPart then return end
-
         local wasFalling = false
-
         local conn = humanoid.StateChanged:Connect(function(_, newState)
-            if newState == Enum.HumanoidStateType.Jumping and settings.JumpEnabled then
+            if newState == Enum.HumanoidStateType.Jumping and jcSettings.JumpEnabled then
                 playRingAt(rootPart.Position - Vector3.new(0, 2.9, 0))
             elseif newState == Enum.HumanoidStateType.Freefall then
                 wasFalling = true
-            elseif newState == Enum.HumanoidStateType.Landed and settings.LandEnabled and wasFalling then
+            elseif newState == Enum.HumanoidStateType.Landed and jcSettings.LandEnabled and wasFalling then
                 wasFalling = false
                 playRingAt(rootPart.Position - Vector3.new(0, 2.9, 0))
             end
         end)
-
         table.insert(humanoidConns, conn)
     end
 
@@ -2160,11 +2277,11 @@ do
         end)
     end
 
-    function JumpCircle.SetJumpEnabled(v) settings.JumpEnabled = v end
-    function JumpCircle.SetLandEnabled(v) settings.LandEnabled = v end
-    function JumpCircle.SetColor(c) settings.Color = c end
-    function JumpCircle.SetSize(v) settings.Size = v end
-    function JumpCircle.SetDuration(v) settings.Duration = v end
+    function JumpCircle.SetJumpEnabled(v) jcSettings.JumpEnabled = v end
+    function JumpCircle.SetLandEnabled(v) jcSettings.LandEnabled = v end
+    function JumpCircle.SetColor(c) jcSettings.Color = c end
+    function JumpCircle.SetSize(v) jcSettings.Size = v end
+    function JumpCircle.SetDuration(v) jcSettings.Duration = v end
 
     JumpCircle.ColorPresets = {
         Purple = Color3.fromRGB(180, 120, 255), Blue = Color3.fromRGB(100, 150, 255),
@@ -2174,7 +2291,6 @@ do
     }
 end
 
--- FOV CONTROL MODULE
 local FOVControl = {}
 do
     local camera = workspace.CurrentCamera
@@ -2200,7 +2316,6 @@ do
     end
 end
 
--- INITIALIZE ALL MODULES
 PlayerAura.Init()
 TrailEffect.Init()
 JumpCircle.Init()
@@ -2259,15 +2374,15 @@ local cachedServerInfo = nil
 local cachedExecutor = nil
 local cachedExecutorVersion = nil
 
-local function getPlayerRegion()
-    if cachedRegion then return cachedRegion end
-    local region = "Unknown"
+-- Client scripts cannot directly read the physical Roblox server datacenter.
+-- If a server-side script replicates ServerRegion, use it; otherwise show unavailable.
+local function getServerRegion()
+    local r = "Server region unavailable"
     pcall(function()
-        local LocalizationService = game:GetService("LocalizationService")
-        region = LocalizationService:GetCountryRegionForPlayerAsync(LocalPlayer) or "Unknown"
+        local v = game:GetService("ReplicatedStorage"):GetAttribute("ServerRegion")
+        if type(v) == "string" and v ~= "" then r = v end
     end)
-    cachedRegion = region
-    return region
+    return r
 end
 
 local function getExecutorInfo()
@@ -2291,8 +2406,6 @@ local function getExecutorInfo()
 end
 
 local function getSUNCInfo()
-    -- sUNC is a behavioral compatibility test, not a standard Roblox API.
-    -- If the executor exposes a numeric score, use it; otherwise report N/A.
     local score = nil
     pcall(function()
         if type(getsuncscore) == "function" then score = getsuncscore() end
@@ -2316,8 +2429,7 @@ local function getServerInfo()
         local jobId = game.JobId or ""
         local placeId = game.PlaceId or 0
         if jobId ~= "" then
-            local shortJob = jobId:sub(1, 8)
-            info = string.format("Place: %d | Server: %s", placeId, shortJob)
+            info = string.format("Place: %d | Server: %s", placeId, jobId:sub(1, 8))
         else
             info = string.format("Place: %d", placeId)
         end
@@ -2335,16 +2447,21 @@ end
 
 task.spawn(function()
     while true do
-        local uptime = tick() - startTime
+        local serverUptime = workspace.DistributedGameTime
+        local scriptTime = tick() - startTime
         local serverTime = os.date("%H:%M:%S")
         local pingText = getPingText()
-        local playerRegion = getPlayerRegion()
+        local serverRegion = getServerRegion()
         local executorName, executorVersion = getExecutorInfo()
         local suncInfo = getSUNCInfo()
         local serverInfo = getServerInfo()
         pcall(function()
             infoParagraph:SetTitle("Stats")
-            infoParagraph:SetDesc(string.format("UpTime: %s\nTime: %s\nRegion: %s\nServer: %s\nPing: %sms\nFPS: %d\nExecutor: %s%s\nSUNC: %s", formatTime(uptime), serverTime, playerRegion, serverInfo, pingText, fps, executorName, executorVersion ~= "" and (" " .. executorVersion) or "", suncInfo))
+            infoParagraph:SetDesc(string.format(
+                "Server UpTime: %s\nScript Time: %s\nServer Region: %s\nServer: %s\nPing: %sms\nFPS: %d\nExecutor: %s%s\nSUNC: %s",
+                formatTime(serverUptime), formatTime(scriptTime), serverRegion, serverInfo, pingText, fps,
+                executorName, executorVersion ~= "" and (" " .. executorVersion) or "", suncInfo
+            ))
         end)
         task.wait(1)
     end
@@ -2352,24 +2469,41 @@ end)
 
 MainTab:AddSection("Lobby")
 
-local Toggle_ShowAllTowers = MainTab:AddToggle("Toggle_ShowAllTowers", {Title = "Show All Towers", Default = Settings.ShowAllTowers, Callback = function(v) Settings.ShowAllTowers = v; if v then startShowAllTowers(); notifyUser("Show All Towers", "Enabled - All towers are visible", 2) else stopShowAllTowers(); notifyUser("Show All Towers", "Disabled - Towers restored", 2) end end })
+local Toggle_ShowAllTowers = MainTab:AddToggle("Toggle_ShowAllTowers", {
+    Title = "Show All Towers",
+    Default = Settings.ShowAllTowers,
+    Callback = function(v)
+        Settings.ShowAllTowers = v
+        if v then startShowAllTowers(); notifyUser("Show All Towers", "Enabled", 2)
+        else stopShowAllTowers(); notifyUser("Show All Towers", "Disabled", 2) end
+    end
+})
 
 MainTab:AddSection("Trading Plaza")
 
-MainTab:AddButton({Title ="Teleport in Tower", Callback = function() pcall(function() local hrp = Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart"); if hrp then hrp.CFrame = CFrame.new(-2, 465, 433); notifyUser("Teleport", "In Tower", 2) end end) end })
-
-MainTab:AddButton({Title ="Teleport in Yourself Quest", Callback = function() pcall(function() local hrp = Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart"); if hrp then hrp.CFrame = CFrame.new(10, 1736, -339); notifyUser("Teleport", "Yourself Quest", 2) end end) end })
-
-local Toggle_BlackMarket = MainTab:AddToggle("BlackMarketToggle", {Title = "Open Black Market", Default = Settings.BlackMarket, Callback = function(v)
-    Settings.BlackMarket = v
-    if v then
-        startBlackMarket()
-        notifyUser("Black Market", "Enabled", 2)
-    else
-        stopBlackMarket()
-        notifyUser("Black Market", "Disabled", 2)
-    end
+MainTab:AddButton({Title = "Teleport in Tower", Callback = function()
+    pcall(function()
+        local hrp = Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = CFrame.new(-2, 465, 433); notifyUser("Teleport", "In Tower", 2) end
+    end)
 end })
+
+MainTab:AddButton({Title = "Teleport in Yourself Quest", Callback = function()
+    pcall(function()
+        local hrp = Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = CFrame.new(10, 1736, -339); notifyUser("Teleport", "Yourself Quest", 2) end
+    end)
+end })
+
+local Toggle_BlackMarket = MainTab:AddToggle("BlackMarketToggle", {
+    Title = "Open Black Market",
+    Default = Settings.BlackMarket,
+    Callback = function(v)
+        Settings.BlackMarket = v
+        if v then startBlackMarket(); notifyUser("Black Market", "Enabled", 2)
+        else stopBlackMarket(); notifyUser("Black Market", "Disabled", 2) end
+    end
+})
 
 local function getHRP()
     local c = Players.LocalPlayer.Character
@@ -2380,6 +2514,7 @@ local camConn = nil
 local lockedCF = nil
 local savedCamPos = nil
 local savedCamText = "(None)"
+
 local function getShakeOffset()
     local offsets = {0.03, 0.05, 0.08, 0.1, 0.12}
     local x = offsets[math.random(1,#offsets)]
@@ -2425,21 +2560,6 @@ local function startAntiMacro()
     end)
 end
 
-local function updateLockedCF()
-    if camConn and lockedCF and savedCamPos then
-        lockedCF = savedCamPos
-    end
-end
-
-local function applySavedCamera()
-    pcall(function()
-        local cam = workspace.CurrentCamera
-        if not cam or not savedCamPos then return end
-        cam.CFrame = savedCamPos
-        if camConn and Settings.AntiMacro then lockedCF = savedCamPos end
-    end)
-end
-
 local function stopAntiMacro()
     if camConn then camConn:Disconnect(); camConn = nil end
     local cam = workspace.CurrentCamera
@@ -2451,18 +2571,22 @@ MainTab:AddSection("Macro")
 
 MainTab:AddParagraph({Title = "Bypass Macros", Content = "Camera Lock + Shake / Walking\nВыбери режимы в списке ниже" })
 
-local Toggle_AntiMacro = MainTab:AddToggle("Toggle_AntiMacro", {Title = "Camera Lock", Default = Settings.AntiMacro, Callback = function(v)
-    Settings.AntiMacro = v
-    if v then
-        startAntiMacro()
-        if hasMacroMode("Walking") then startWalkMacro() end
-        notifyUser("Camera Lock", "ON", 2)
-    else
-        stopAntiMacro()
-        stopWalkMacro()
-        notifyUser("Camera Lock", "OFF", 2)
+local Toggle_AntiMacro = MainTab:AddToggle("Toggle_AntiMacro", {
+    Title = "Camera Lock",
+    Default = Settings.AntiMacro,
+    Callback = function(v)
+        Settings.AntiMacro = v
+        if v then
+            startAntiMacro()
+            if hasMacroMode("Walking") then startWalkMacro() end
+            notifyUser("Camera Lock", "ON", 2)
+        else
+            stopAntiMacro()
+            stopWalkMacro()
+            notifyUser("Camera Lock", "OFF", 2)
+        end
     end
-end })
+})
 
 local currentMacroOption = "None"
 if hasMacroMode("Shiking") and hasMacroMode("Walking") then
@@ -2487,16 +2611,13 @@ local macroDropdown = MainTab:AddDropdown("MacroModes", {
             table.insert(Settings.MacroModes, "Shiking")
             table.insert(Settings.MacroModes, "Walking")
         end
-        
         if not Settings.AntiMacro and opt ~= "None" then
             notifyUser("Macro Modes", "Turn on Camera Lock first!", 2)
             return
         end
-        
         local parts = {}
         if hasMacroMode("Shiking") then table.insert(parts, "Shiking") end
         if hasMacroMode("Walking") then startWalkMacro(); table.insert(parts, "Walking") else stopWalkMacro() end
-        
         if Settings.NotificationsEnabled and #parts > 0 then
             notifyUser("Macro Modes", table.concat(parts, " + "), 1)
         end
@@ -2506,12 +2627,14 @@ local macroDropdown = MainTab:AddDropdown("MacroModes", {
 MainTab:AddSection("Walk Settings")
 
 local walkPresets = {
-    None = {WalkChance = 0, JumpChance = 0, MoveDurationMin = 0.8, MoveDurationMax = 2.5, PauseMin = 0.05, PauseMax = 0.3},
-    Slow = {WalkChance = 25, JumpChance = 10, MoveDurationMin = 1.5, MoveDurationMax = 3.5, PauseMin = 0.3, PauseMax = 1.0},
+    None   = {WalkChance = 0,  JumpChance = 0,  MoveDurationMin = 0.8, MoveDurationMax = 2.5, PauseMin = 0.05, PauseMax = 0.3},
+    Slow   = {WalkChance = 25, JumpChance = 10, MoveDurationMin = 1.5, MoveDurationMax = 3.5, PauseMin = 0.3,  PauseMax = 1.0},
     Medium = {WalkChance = 40, JumpChance = 15, MoveDurationMin = 0.8, MoveDurationMax = 2.5, PauseMin = 0.05, PauseMax = 0.3},
-    Fast = {WalkChance = 60, JumpChance = 25, MoveDurationMin = 0.4, MoveDurationMax = 1.5, PauseMin = 0.02, PauseMax = 0.15},
+    Fast   = {WalkChance = 60, JumpChance = 25, MoveDurationMin = 0.4, MoveDurationMax = 1.5, PauseMin = 0.02, PauseMax = 0.15},
     Custom = nil
 }
+
+local walkChanceSlider, jumpChanceSlider, moveMinSlider, moveMaxSlider, pauseMinSlider, pauseMaxSlider
 
 local walkPresetDropdown = MainTab:AddDropdown("WalkPreset", {
     Title = "Walk Preset",
@@ -2539,23 +2662,48 @@ local walkPresetDropdown = MainTab:AddDropdown("WalkPreset", {
 
 MainTab:AddParagraph({Title = "Custom Walk", Content = "Select 'Custom' preset to manually adjust sliders below"})
 
-local walkChanceSlider = MainTab:AddSlider("WalkChance", {Title = "Walk Chance (%)", Min = 0, Max = 90, Rounding = 0, Default = Settings.WalkChance, Callback = function(v) Settings.WalkChance = v end })
-local jumpChanceSlider = MainTab:AddSlider("JumpChance", {Title = "Jump Chance (%)", Min = 0, Max = 50, Rounding = 0, Default = Settings.JumpChance, Callback = function(v) Settings.JumpChance = v end })
-local moveMinSlider = MainTab:AddSlider("MoveMin", {Title = "Move Min (s)", Min = 0.2, Max = 3, Rounding = 1, Default = Settings.MoveDurationMin, Callback = function(v) Settings.MoveDurationMin = v end })
-local moveMaxSlider = MainTab:AddSlider("MoveMax", {Title = "Move Max (s)", Min = 0.5, Max = 5, Rounding = 1, Default = Settings.MoveDurationMax, Callback = function(v) Settings.MoveDurationMax = v end })
-local pauseMinSlider = MainTab:AddSlider("PauseMin", {Title = "Pause Min (s)", Min = 0, Max = 1, Rounding = 2, Default = Settings.PauseMin, Callback = function(v) Settings.PauseMin = v end })
-local pauseMaxSlider = MainTab:AddSlider("PauseMax", {Title = "Pause Max (s)", Min = 0.1, Max = 2, Rounding = 2, Default = Settings.PauseMax, Callback = function(v) Settings.PauseMax = v end })
+walkChanceSlider = MainTab:AddSlider("WalkChance", {Title = "Walk Chance (%)", Min = 0, Max = 90, Rounding = 0, Default = Settings.WalkChance, Callback = function(v) Settings.WalkChance = v end })
+jumpChanceSlider = MainTab:AddSlider("JumpChance", {Title = "Jump Chance (%)", Min = 0, Max = 50, Rounding = 0, Default = Settings.JumpChance, Callback = function(v) Settings.JumpChance = v end })
+moveMinSlider = MainTab:AddSlider("MoveMin", {Title = "Move Min (s)", Min = 0.2, Max = 3, Rounding = 1, Default = Settings.MoveDurationMin, Callback = function(v) Settings.MoveDurationMin = v end })
+moveMaxSlider = MainTab:AddSlider("MoveMax", {Title = "Move Max (s)", Min = 0.5, Max = 5, Rounding = 1, Default = Settings.MoveDurationMax, Callback = function(v) Settings.MoveDurationMax = v end })
+pauseMinSlider = MainTab:AddSlider("PauseMin", {Title = "Pause Min (s)", Min = 0, Max = 1, Rounding = 2, Default = Settings.PauseMin, Callback = function(v) Settings.PauseMin = v end })
+pauseMaxSlider = MainTab:AddSlider("PauseMax", {Title = "Pause Max (s)", Min = 0.1, Max = 2, Rounding = 2, Default = Settings.PauseMax, Callback = function(v) Settings.PauseMax = v end })
 
 local savedPosition = nil
 local savedCoordsText = "(None)"
 
-local teleportButton = MainTab:AddButton({Title ="Teleport to Position (None)", Callback = function() local hrp = getHRP(); if hrp and savedPosition then hrp.CFrame = savedPosition; notifyUser("Teleported", "To " .. savedCoordsText, 2) else notifyUser("Error", "No saved position", 2) end end })
+local teleportButton = MainTab:AddButton({Title = "Teleport to Position (None)", Callback = function()
+    local hrp = getHRP()
+    if hrp and savedPosition then hrp.CFrame = savedPosition; notifyUser("Teleported", "To " .. savedCoordsText, 2)
+    else notifyUser("Error", "No saved position", 2) end
+end })
 
-MainTab:AddButton({Title ="Save Position", Callback = function() local hrp = getHRP(); if not hrp then return end; savedPosition = hrp.CFrame; local x, y, z = math.floor(hrp.Position.X), math.floor(hrp.Position.Y), math.floor(hrp.Position.Z); savedCoordsText = string.format("(%d, %d, %d)", x, y, z); teleportButton:SetTitle("Teleport to Position " .. savedCoordsText); notifyUser("Saved", "Saved at " .. savedCoordsText, 2) end })
+MainTab:AddButton({Title = "Save Position", Callback = function()
+    local hrp = getHRP()
+    if not hrp then return end
+    savedPosition = hrp.CFrame
+    local x, y, z = math.floor(hrp.Position.X), math.floor(hrp.Position.Y), math.floor(hrp.Position.Z)
+    savedCoordsText = string.format("(%d, %d, %d)", x, y, z)
+    teleportButton:SetTitle("Teleport to Position " .. savedCoordsText)
+    notifyUser("Saved", "Saved at " .. savedCoordsText, 2)
+end })
 
-local camTeleportButton = MainTab:AddButton({Title ="Save Camera Position (None)", Callback = function() local cam = workspace.CurrentCamera; if not cam then return end; savedCamPos = cam.CFrame; local p = cam.CFrame.Position; savedCamText = string.format("(%d, %d, %d)", math.floor(p.X), math.floor(p.Y), math.floor(p.Z)); camTeleportButton:SetTitle("Save Camera Position ("..savedCamText..")"); notifyUser("Camera", "Saved at " .. savedCamText, 2) end })
+local camTeleportButton = MainTab:AddButton({Title = "Save Camera Position (None)", Callback = function()
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    savedCamPos = cam.CFrame
+    local p = cam.CFrame.Position
+    savedCamText = string.format("(%d, %d, %d)", math.floor(p.X), math.floor(p.Y), math.floor(p.Z))
+    camTeleportButton:SetTitle("Save Camera Position (" .. savedCamText .. ")")
+    notifyUser("Camera", "Saved at " .. savedCamText, 2)
+end })
 
-local camResetButton = MainTab:AddButton({Title ="Reset Camera Position", Callback = function() savedCamPos = nil; savedCamText = "(None)"; pcall(function() camTeleportButton:SetTitle("Save Camera Position (None)") end); notifyUser("Camera", "Saved position cleared", 2) end })
+MainTab:AddButton({Title = "Reset Camera Position", Callback = function()
+    savedCamPos = nil
+    savedCamText = "(None)"
+    pcall(function() camTeleportButton:SetTitle("Save Camera Position (None)") end)
+    notifyUser("Camera", "Saved position cleared", 2)
+end })
 
 Players.LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
@@ -2567,43 +2715,102 @@ end)
 
 MainTab:AddSection("Teleports")
 
-MainTab:AddButton({Title ="Lobby", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(14279693118, Players.LocalPlayer); notifyUser("Teleport", "To Lobby", 2) end) end })
+MainTab:AddButton({Title = "Lobby", Callback = function()
+    pcall(function() game:GetService("TeleportService"):Teleport(14279693118, Players.LocalPlayer); notifyUser("Teleport", "To Lobby", 2) end)
+end })
 
-MainTab:AddButton({Title ="Trading Plaza", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(18711550363, Players.LocalPlayer); notifyUser("Teleport", "To Trading Plaza", 2) end) end })
+MainTab:AddButton({Title = "Trading Plaza", Callback = function()
+    pcall(function() game:GetService("TeleportService"):Teleport(18711550363, Players.LocalPlayer); notifyUser("Teleport", "To Trading Plaza", 2) end)
+end })
 
-MainTab:AddButton({Title ="HappyBirtchDay", Callback = function() pcall(function() game:GetService("TeleportService"):Teleport(93311267472350, Players.LocalPlayer); notifyUser("Teleport", "To HappyBirtchDay", 2) end) end })
+MainTab:AddButton({Title = "HappyBirtchDay", Callback = function()
+    pcall(function() game:GetService("TeleportService"):Teleport(93311267472350, Players.LocalPlayer); notifyUser("Teleport", "To HappyBirtchDay", 2) end)
+end })
 
 local FeaturesTab = Window:AddTab({Title = "Features", Icon = "rbxassetid://4483345998" })
-
 FeaturesTab:AddParagraph({Title = "Coming Soon", Content = "New features are being developed and will be available in future updates.\n\nStay tuned!"})
 
 local OtherTab = Window:AddTab({Title = "Other", Icon = "rbxassetid://102763551061763" })
-
 OtherTab:AddSection("Utilities")
 
 local originalHoldDurations = {}
 
-local function saveOriginalHoldDuration(prompt) if originalHoldDurations[prompt] == nil then originalHoldDurations[prompt] = prompt.HoldDuration end end
-local function setInstantProxMount(prompt) saveOriginalHoldDuration(prompt); pcall(function() prompt.HoldDuration = 0 end) end
-local function restoreOriginalHoldDuration(prompt) if originalHoldDurations[prompt] ~= nil then pcall(function() prompt.HoldDuration = originalHoldDurations[prompt] end) end end
-local function applyInstantProxMount(action) for _, prompt in ipairs(workspace:GetDescendants()) do if prompt:IsA("ProximityPrompt") then if action == "set" then setInstantProxMount(prompt) elseif action == "restore" then restoreOriginalHoldDuration(prompt) end end end end
+local function saveOriginalHoldDuration(prompt)
+    if originalHoldDurations[prompt] == nil then originalHoldDurations[prompt] = prompt.HoldDuration end
+end
+local function setInstantProxMount(prompt)
+    saveOriginalHoldDuration(prompt)
+    pcall(function() prompt.HoldDuration = 0 end)
+end
+local function restoreOriginalHoldDuration(prompt)
+    if originalHoldDurations[prompt] ~= nil then
+        pcall(function() prompt.HoldDuration = originalHoldDurations[prompt] end)
+    end
+end
+local function applyInstantProxMount(action)
+    for _, prompt in ipairs(workspace:GetDescendants()) do
+        if prompt:IsA("ProximityPrompt") then
+            if action == "set" then setInstantProxMount(prompt)
+            elseif action == "restore" then restoreOriginalHoldDuration(prompt) end
+        end
+    end
+end
 
-workspace.DescendantAdded:Connect(function(descendant) task.wait(0.1); if descendant:IsA("ProximityPrompt") and Settings.InstantProxMount then setInstantProxMount(descendant) end end)
-task.spawn(function() while true do task.wait(0.5); if Settings.InstantProxMount then applyInstantProxMount("set") end end end)
+workspace.DescendantAdded:Connect(function(descendant)
+    task.wait(0.1)
+    if descendant:IsA("ProximityPrompt") and Settings.InstantProxMount then
+        setInstantProxMount(descendant)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Settings.InstantProxMount then applyInstantProxMount("set") end
+    end
+end)
 
 local antiAFKEnabled = Settings.AntiAFK
-local function startAntiAFK() if antiAFKEnabled then return end; antiAFKEnabled = true; Settings.AntiAFK = true; loadstring(game:HttpGet("https://raw.githubusercontent.com/hassanxzayn-lua/Anti-afk/main/antiafkbyhassanxzyn"))(); notifyUser("Anti AFK", "Enabled", 2) end
+local function startAntiAFK()
+    if antiAFKEnabled then return end
+    antiAFKEnabled = true
+    Settings.AntiAFK = true
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/hassanxzayn-lua/Anti-afk/main/antiafkbyhassanxzyn"))()
+    notifyUser("Anti AFK", "Enabled", 2)
+end
 
-OtherTab:AddButton({Title =antiAFKEnabled and "Anti AFK [ON]" or "Anti AFK", Callback = function() if not antiAFKEnabled then startAntiAFK() end end })
+OtherTab:AddButton({Title = antiAFKEnabled and "Anti AFK [ON]" or "Anti AFK", Callback = function()
+    if not antiAFKEnabled then startAntiAFK() end
+end })
 
-local Toggle_InstantProxMount = OtherTab:AddToggle("Toggle_InstantProxMount", {Title = "Instant ProxMount", Default = Settings.InstantProxMount, Callback = function(v) Settings.InstantProxMount = v; if v then applyInstantProxMount("set"); notifyUser("Instant ProxMount", "HoldDuration = 0", 2) else applyInstantProxMount("restore"); notifyUser("Instant ProxMount", "Restored", 2) end end })
+local Toggle_InstantProxMount = OtherTab:AddToggle("Toggle_InstantProxMount", {
+    Title = "Instant ProxMount",
+    Default = Settings.InstantProxMount,
+    Callback = function(v)
+        Settings.InstantProxMount = v
+        if v then applyInstantProxMount("set"); notifyUser("Instant ProxMount", "HoldDuration = 0", 2)
+        else applyInstantProxMount("restore"); notifyUser("Instant ProxMount", "Restored", 2) end
+    end
+})
 
 local dexLoaded = false
-local function loadDex() if dexLoaded then return end; dexLoaded = true; task.spawn(xpcall, assert(loadstring(game:HttpGet('https://raw.githubusercontent.com/Diffone7/r/refs/heads/main/tsb/dex')), warn)); notifyUser("Dex", "Loaded!", 2) end
+local function loadDex()
+    if dexLoaded then return end
+    dexLoaded = true
+    task.spawn(xpcall, assert(loadstring(game:HttpGet('https://raw.githubusercontent.com/Diffone7/r/refs/heads/main/tsb/dex')), warn))
+    notifyUser("Dex", "Loaded!", 2)
+end
 
-OtherTab:AddButton({Title ="Dex Explorer", Callback = function() if not dexLoaded then loadDex() end end })
-OtherTab:AddButton({Title ="Rejoin", Callback = function() notifyUser("Rejoin", "Rejoining server...", 2); task.wait(1); game:GetService("TeleportService"):Teleport(game.PlaceId, Players.LocalPlayer) end })
-OtherTab:AddButton({Title ="Infinite Yield", Callback = function() loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))(); notifyUser("Infinite Yield", "Loaded!", 2) end })
+OtherTab:AddButton({Title = "Dex Explorer", Callback = function() if not dexLoaded then loadDex() end end })
+OtherTab:AddButton({Title = "Rejoin", Callback = function()
+    notifyUser("Rejoin", "Rejoining server...", 2)
+    task.wait(1)
+    game:GetService("TeleportService"):Teleport(game.PlaceId, Players.LocalPlayer)
+end })
+OtherTab:AddButton({Title = "Infinite Yield", Callback = function()
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
+    notifyUser("Infinite Yield", "Loaded!", 2)
+end })
 
 local serverHopActive = false
 local serverHopConnection = nil
@@ -2615,7 +2822,9 @@ local function destroyServerHopUI()
             for _, gui in ipairs(playerGui:GetChildren()) do
                 if gui:IsA("ScreenGui") then
                     local nameLower = string.lower(gui.Name)
-                    if nameLower:find("server") or nameLower:find("hop") or nameLower:find("teleport") or nameLower:find("hub") or nameLower == "main" or gui:FindFirstChild("ServerList") or gui:FindFirstChild("ServerHop") then
+                    if nameLower:find("server") or nameLower:find("hop") or nameLower:find("teleport") or
+                       nameLower:find("hub") or nameLower == "main" or gui:FindFirstChild("ServerList") or
+                       gui:FindFirstChild("ServerHop") then
                         gui:Destroy()
                     end
                 end
@@ -2634,11 +2843,6 @@ local function destroyServerHopUI()
         if type(getgenv) == "function" then
             local env = getgenv()
             if env then env.ServerHop = nil end
-        end
-        if _G.ServerHopUI then _G.ServerHopUI = nil end
-        if type(getgenv) == "function" then
-            local env = getgenv()
-            if env then env.ServerHopUI = nil end
         end
         if serverHopConnection then serverHopConnection:Disconnect(); serverHopConnection = nil end
     end)
@@ -2668,11 +2872,12 @@ local function loadServerHopUI()
     end)
 end
 
-OtherTab:AddButton({Title ="Server Hop UI", Callback = function() loadServerHopUI() end })
+OtherTab:AddButton({Title = "Server Hop UI", Callback = function() loadServerHopUI() end })
 
 local infCamEnabled = false
 local oldMinZoom = nil
 local oldMaxZoom = nil
+
 local function toggleInfCamera(v)
     local player = Players.LocalPlayer
     if v then
@@ -2688,24 +2893,43 @@ local function toggleInfCamera(v)
     end
 end
 
-OtherTab:AddToggle("InfCamera", {Title = "Inf Camera Distance", Default = false, Callback = function(v) infCamEnabled = v; toggleInfCamera(v); notifyUser("Camera Distance", v and "Infinite Enabled" or "Restored", 2) end })
+OtherTab:AddToggle("InfCamera", {
+    Title = "Inf Camera Distance",
+    Default = false,
+    Callback = function(v)
+        infCamEnabled = v
+        toggleInfCamera(v)
+        notifyUser("Camera Distance", v and "Infinite Enabled" or "Restored", 2)
+    end
+})
 
-local Toggle_AutoRestoreCam = OtherTab:AddToggle("AutoRestoreCam", {Title = "Auto Restore Camera", Default = Settings.AutoRestoreCam, Callback = function(v) Settings.AutoRestoreCam = v; notifyUser("Camera", v and "Auto restore ON" or "Auto restore OFF", 2) end })
+local Toggle_AutoRestoreCam = OtherTab:AddToggle("AutoRestoreCam", {
+    Title = "Auto Restore Camera",
+    Default = Settings.AutoRestoreCam,
+    Callback = function(v)
+        Settings.AutoRestoreCam = v
+        notifyUser("Camera", v and "Auto restore ON" or "Auto restore OFF", 2)
+    end
+})
 
 OtherTab:AddSection("Settings")
 
-local Toggle_NotificationsEnabled = OtherTab:AddToggle("Toggle_NotificationsEnabled", {Title = "Show Notifications", Default = Settings.NotificationsEnabled, Callback = function(v) Settings.NotificationsEnabled = v; notifyUser("Notifications", v and "Enabled" or "Disabled", 2) end })
+local Toggle_NotificationsEnabled = OtherTab:AddToggle("Toggle_NotificationsEnabled", {
+    Title = "Show Notifications",
+    Default = Settings.NotificationsEnabled,
+    Callback = function(v)
+        Settings.NotificationsEnabled = v
+        notifyUser("Notifications", v and "Enabled" or "Disabled", 2)
+    end
+})
 
 OtherTab:AddSection("Unload")
 
--- Переменная для контроля AutoSave
 local autoSaveRunning = true
 
 local AutoLoadTeleportEnabled = true
-
 if typeof(getgenv) == "function" then
     local env = getgenv()
-
     if env.SkibidiAutoLoadTeleport ~= nil then
         AutoLoadTeleportEnabled = env.SkibidiAutoLoadTeleport
     end
@@ -2716,16 +2940,10 @@ local function SetupAutoLoadTeleport()
         warn("queue_on_teleport не найден")
         return
     end
-
     queue_on_teleport([[
         task.wait(2)
-
         local env = getgenv and getgenv()
-
-        if env and env.SkibidiAutoLoadTeleport == false then
-            return
-        end
-
+        if env and env.SkibidiAutoLoadTeleport == false then return end
         pcall(function()
             loadstring(game:HttpGet(
                 "https://raw.githubusercontent.com/MrAdiviKPlayYT/sdkasjdskfjasd/refs/heads/main/sdsadas.lua"
@@ -2737,14 +2955,12 @@ end
 if typeof(getgenv) == "function" then
     getgenv().SkibidiAutoLoadTeleport = AutoLoadTeleportEnabled
 end
-
 if AutoLoadTeleportEnabled then
     SetupAutoLoadTeleport()
 end
 
 OtherTab:AddButton({Title = "Unload Script", Callback = function()
-    autoSaveRunning = false -- Останавливаем AutoSave
-    
+    autoSaveRunning = false
     pcall(function() stopWalkMacro() end)
     pcall(function() stopAntiMacro() end)
     pcall(function() stopShowAllTowers() end)
@@ -2761,7 +2977,6 @@ OtherTab:AddButton({Title = "Unload Script", Callback = function()
     pcall(function() JumpCircle.SetLandEnabled(false) end)
     pcall(function() FOVControl.Reset() end)
     pcall(function() Macro.StopAll() end)
-    
     pcall(function()
         if descendantConnection then descendantConnection:Disconnect(); descendantConnection = nil end
         if showAllTowersConnection then showAllTowersConnection:Disconnect(); showAllTowersConnection = nil end
@@ -2769,27 +2984,22 @@ OtherTab:AddButton({Title = "Unload Script", Callback = function()
         if camConn then camConn:Disconnect(); camConn = nil end
         if endedConnection then endedConnection:Disconnect(); endedConnection = nil end
     end)
-    
     pcall(function() toggleInfCamera(false) end)
     pcall(function() restoreEverything() end)
     pcall(function() restorePostEffects() end)
-    
     pcall(function()
         local cam = workspace.CurrentCamera
         if cam then cam.CameraType = Enum.CameraType.Custom end
     end)
-    
     pcall(function()
         if Window and Window.Destroy then Window:Destroy() end
     end)
-    
     _G.SkibidiDefenseLoaded = nil
     _G.SkibidiGUI = nil
     if type(getgenv) == "function" then
         local env = getgenv()
         if env then env.SkibidiGUI = nil end
     end
-    
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
             Title = "Skibidi Defense",
@@ -2797,7 +3007,6 @@ OtherTab:AddButton({Title = "Unload Script", Callback = function()
             Duration = 3
         })
     end)
-    
     print("[Unload] Script fully unloaded")
 end })
 
@@ -2805,16 +3014,50 @@ local VisualTab = Window:AddTab({Title = "Visual", Icon = "rbxassetid://10885652
 
 VisualTab:AddSection("Potato Graphics")
 VisualTab:AddParagraph({Title = "Potato Graphics Mode", Content = "Maximum FPS Boost for low-end PCs\n\n• Disables shadows\n• Removes particles, trails & beams\n• Turns all materials to Plastic\n• Disables water effects\n• Disables bloom & post-processing" })
-local Toggle_PotatoGraphics = VisualTab:AddToggle("Toggle_PotatoGraphics", {Title = "Potato Graphics Mode", Default = Settings.PotatoGraphics, Callback = function(v) togglePotatoGraphics(v) end })
+local Toggle_PotatoGraphics = VisualTab:AddToggle("Toggle_PotatoGraphics", {
+    Title = "Potato Graphics Mode",
+    Default = Settings.PotatoGraphics,
+    Callback = function(v) togglePotatoGraphics(v) end
+})
 
 VisualTab:AddSection("Game")
-VisualTab:AddInput("GameSpeed", {Title = "Enter Speed", Placeholder = "0.1 - 10", Default = tostring(Settings.GameSpeed), Callback = function(Text) local speed = tonumber(Text); if speed then if speed < 0.1 then speed = 0.1 end; if speed > 10 then speed = 10 end; Settings.GameSpeed = speed; setGameSpeed(speed) else notifyUser("Game Speed", "Invalid! Use 0.1 - 10", 2) end end })
-VisualTab:AddButton({Title ="Reset Game Speed (1x)", Callback = function() Settings.GameSpeed = 1; setGameSpeed(1) end })
+VisualTab:AddInput("GameSpeed", {
+    Title = "Enter Speed",
+    Placeholder = "0.1 - 10",
+    Default = tostring(Settings.GameSpeed),
+    Callback = function(Text)
+        local speed = tonumber(Text)
+        if speed then
+            if speed < 0.1 then speed = 0.1 end
+            if speed > 10 then speed = 10 end
+            Settings.GameSpeed = speed
+            setGameSpeed(speed)
+        else
+            notifyUser("Game Speed", "Invalid! Use 0.1 - 10", 2)
+        end
+    end
+})
+VisualTab:AddButton({Title = "Reset Game Speed (1x)", Callback = function() Settings.GameSpeed = 1; setGameSpeed(1) end })
 
 VisualTab:AddSection("Tower Boosts")
-VisualTab:AddDropdown("BoostType", {Title = "Boost Type", Values = {"DMG", "CASH", "COST", "HD", "RNG", "SKIP", "SPA"}, Default = Settings.SelectedBoostType, Callback = function(opt) Settings.SelectedBoostType = opt; notifyUser("Tower Boosts", "Selected: " .. opt, 1) end })
-VisualTab:AddInput("BoostValue", {Title = "Boost Value", Placeholder = "Enter value (or inf)", Default = "", Callback = function(Text) local value; if string.lower(Text) == "inf" then value = math.huge else value = tonumber(Text) end; if value then applyBoostSafe(Settings.SelectedBoostType, value) else notifyUser("Tower Boosts", "Invalid number! Use 0-999 or inf", 2) end end })
-VisualTab:AddButton({Title ="Reset All Tower Boosts", Callback = function() resetBoosts() end })
+VisualTab:AddDropdown("BoostType", {
+    Title = "Boost Type",
+    Values = {"DMG", "CASH", "COST", "HD", "RNG", "SKIP", "SPA"},
+    Default = Settings.SelectedBoostType,
+    Callback = function(opt) Settings.SelectedBoostType = opt; notifyUser("Tower Boosts", "Selected: " .. opt, 1) end
+})
+VisualTab:AddInput("BoostValue", {
+    Title = "Boost Value",
+    Placeholder = "Enter value (or inf)",
+    Default = "",
+    Callback = function(Text)
+        local value
+        if string.lower(Text) == "inf" then value = math.huge else value = tonumber(Text) end
+        if value then applyBoostSafe(Settings.SelectedBoostType, value)
+        else notifyUser("Tower Boosts", "Invalid number! Use 0-999 or inf", 2) end
+    end
+})
+VisualTab:AddButton({Title = "Reset All Tower Boosts", Callback = function() resetBoosts() end })
 
 local VisualState = {
     Ambient = { enabled = false, color = "Purple" },
@@ -2836,7 +3079,7 @@ VisualControls.AmbientToggle = VisualTab:AddToggle("AmbientToggle", {
 })
 VisualControls.AmbientColorDropdown = VisualTab:AddDropdown("AmbientColorDropdown", {
     Title = "Ambient Color",
-    Values = { "Purple", "Blue", "Red", "Green", "Orange", "Cyan", "Pink", "Gold" },
+    Values = {"Purple","Blue","Red","Green","Orange","Cyan","Pink","Gold"},
     Default = "Purple",
     Callback = function(opt)
         VisualState.Ambient.color = opt
@@ -2851,7 +3094,7 @@ VisualControls.AtmosphereToggle = VisualTab:AddToggle("AtmosphereToggle", {
 })
 VisualControls.AtmosphereColorDropdown = VisualTab:AddDropdown("AtmosphereColorDropdown", {
     Title = "Atmosphere Color",
-    Values = { "Purple", "Blue", "Red", "Green", "Orange", "Cyan", "Pink" },
+    Values = {"Purple","Blue","Red","Green","Orange","Cyan","Pink"},
     Default = "Purple",
     Callback = function(opt)
         VisualState.Atmosphere.color = opt
@@ -2886,7 +3129,7 @@ VisualControls.ColorCorrectionToggle = VisualTab:AddToggle("ColorCorrectionToggl
 })
 VisualControls.TintDropdown = VisualTab:AddDropdown("TintDropdown", {
     Title = "Tint",
-    Values = { "Normal", "Warm", "Cool", "Sepia", "Vintage", "Cold", "Dramatic" },
+    Values = {"Normal","Warm","Cool","Sepia","Vintage","Cold","Dramatic"},
     Default = "Normal",
     Callback = function(opt)
         VisualState.ColorCorrection.tint = opt
@@ -2912,10 +3155,11 @@ VisualControls.FOVSlider = VisualTab:AddSlider("FOVSlider", {
     Title = "FOV", Min = 30, Max = 120, Rounding = 0, Default = math.floor(FOVControl.GetDefault()),
     Callback = function(v) VisualState.FOV = v; FOVControl.SetFOV(v) end
 })
-VisualTab:AddButton({
-    Title = "Reset FOV",
-    Callback = function() FOVControl.Reset(); VisualState.FOV = math.floor(FOVControl.GetDefault()); if VisualControls.FOVSlider then VisualControls.FOVSlider:SetValue(VisualState.FOV) end end
-})
+VisualTab:AddButton({Title = "Reset FOV", Callback = function()
+    FOVControl.Reset()
+    VisualState.FOV = math.floor(FOVControl.GetDefault())
+    if VisualControls.FOVSlider then VisualControls.FOVSlider:SetValue(VisualState.FOV) end
+end })
 
 VisualTab:AddSection("Player Aura")
 VisualControls.AuraToggle = VisualTab:AddToggle("AuraToggle", {
@@ -2924,7 +3168,7 @@ VisualControls.AuraToggle = VisualTab:AddToggle("AuraToggle", {
 })
 VisualControls.AuraColorDropdown = VisualTab:AddDropdown("AuraColorDropdown", {
     Title = "Aura Color",
-    Values = { "Purple", "Blue", "Pink", "Green", "Gold", "Red", "White", "Cyan" },
+    Values = {"Purple","Blue","Pink","Green","Gold","Red","White","Cyan"},
     Default = "Purple",
     Callback = function(opt) VisualState.Aura.color = opt; PlayerAura.SetColor(PlayerAura.ColorPresets[opt]) end
 })
@@ -2944,7 +3188,7 @@ VisualControls.TrailToggle = VisualTab:AddToggle("TrailToggle", {
 })
 VisualControls.TrailColorDropdown = VisualTab:AddDropdown("TrailColorDropdown", {
     Title = "Trail Color",
-    Values = { "Purple-Blue", "Red-Orange", "Green-Cyan", "Pink-Gold", "White-Blue" },
+    Values = {"Purple-Blue","Red-Orange","Green-Cyan","Pink-Gold","White-Blue"},
     Default = "Purple-Blue",
     Callback = function(opt)
         VisualState.Trail.color = opt
@@ -2972,39 +3216,60 @@ VisualControls.LandCircleToggle = VisualTab:AddToggle("LandCircleToggle", {
 })
 VisualControls.JumpCircleColorDropdown = VisualTab:AddDropdown("JumpCircleColorDropdown", {
     Title = "Circle Color",
-    Values = { "Purple", "Blue", "Pink", "Green", "Gold", "Red", "White", "Cyan" },
+    Values = {"Purple","Blue","Pink","Green","Gold","Red","White","Cyan"},
     Default = "Purple",
     Callback = function(opt) VisualState.JumpCircle.color = opt; JumpCircle.SetColor(JumpCircle.ColorPresets[opt]) end
 })
 
 VisualTab:AddSection("Reset")
-VisualTab:AddButton({
-    Title = "Disable All Effects",
-    Callback = function()
-        LightingEffects.ResetAll()
-        PlayerAura.SetEnabled(false)
-        TrailEffect.SetEnabled(false)
-        JumpCircle.SetJumpEnabled(false)
-        JumpCircle.SetLandEnabled(false)
-        FOVControl.Reset()
-    end
-})
+VisualTab:AddButton({Title = "Disable All Effects", Callback = function()
+    LightingEffects.ResetAll()
+    PlayerAura.SetEnabled(false)
+    TrailEffect.SetEnabled(false)
+    JumpCircle.SetJumpEnabled(false)
+    JumpCircle.SetLandEnabled(false)
+    FOVControl.Reset()
+end })
 
 local WebhookTab = Window:AddTab({Title = "WebHook", Icon = "rbxassetid://12465540157" })
 
 WebhookTab:AddSection("Webhook Settings")
-local Toggle_WebhookEnabled = WebhookTab:AddToggle("Toggle_WebhookEnabled", {Title = "Enable Webhook", Default = Settings.WebhookEnabled, Callback = function(v) Settings.WebhookEnabled = v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
-WebhookTab:AddInput("WebhookURL", {Title = "Webhook URL", Placeholder = "https://discord.com/api/webhooks/...", Default = Settings.WebhookURL, Callback = function(Text) Settings.WebhookURL = Text; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+local Toggle_WebhookEnabled = WebhookTab:AddToggle("Toggle_WebhookEnabled", {
+    Title = "Enable Webhook",
+    Default = Settings.WebhookEnabled,
+    Callback = function(v) Settings.WebhookEnabled = v end
+})
+WebhookTab:AddInput("WebhookURL", {
+    Title = "Webhook URL",
+    Placeholder = "https://discord.com/api/webhooks/...",
+    Default = Settings.WebhookURL,
+    Callback = function(Text) Settings.WebhookURL = Text end
+})
 
 WebhookTab:AddSection("Match Tracker Settings")
-WebhookTab:AddToggle("WebhookMatchTracking", {Title = "Track Matches (Win/Loss)", Default = false, Callback = function(v) Settings.WebhookMatchTracking = v; if v then startMatchTracking() else stopMatchTracking() end; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
-WebhookTab:AddToggle("ShowLogInWebhook", {Title = "Show Log in Webhook", Default = true, Callback = function(v) Settings.ShowLogInWebhook = v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+WebhookTab:AddToggle("WebhookMatchTracking", {
+    Title = "Track Matches (Win/Loss)",
+    Default = false,
+    Callback = function(v)
+        Settings.WebhookMatchTracking = v
+        if v then startMatchTracking() else stopMatchTracking() end
+    end
+})
+WebhookTab:AddToggle("ShowLogInWebhook", {
+    Title = "Show Log in Webhook",
+    Default = true,
+    Callback = function(v) Settings.ShowLogInWebhook = v end
+})
 
 WebhookTab:AddSection("Display Fields")
 local matchFieldsText = WebhookTab:AddParagraph({Title = "Selected Fields", Content = table.concat(Settings.WebhookMatchFields, ", ") })
-local function updateMatchFieldsText() pcall(function() matchFieldsText:SetDesc(#Settings.WebhookMatchFields > 0 and table.concat(Settings.WebhookMatchFields, ", ") or "None") end); Settings.WebhookMatchFields = Settings.WebhookMatchFields; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end
+local function updateMatchFieldsText()
+    pcall(function()
+        matchFieldsText:SetDesc(#Settings.WebhookMatchFields > 0 and table.concat(Settings.WebhookMatchFields, ", ") or "None")
+    end)
+end
 
-local fieldsList = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
+local fieldsList = {"Result","Streak","Kills","Survived","Time","Items","Credits","Crystals","Spent","Player","TotalCredits"}
 local fieldToggles = {}
 for _, field in ipairs(fieldsList) do
     local isDefaultOn = table.find(Settings.WebhookMatchFields, field) ~= nil
@@ -3023,34 +3288,25 @@ for _, field in ipairs(fieldsList) do
     })
 end
 
-WebhookTab:AddButton({Title ="Reset Win Streak & Total Credits", Callback = function() winStreak = 0; totalCredits = 0; notifyUser("Reset", "Reset to 0", 2) end })
+WebhookTab:AddButton({Title = "Reset Win Streak & Total Credits", Callback = function()
+    winStreak = 0; totalCredits = 0; notifyUser("Reset", "Reset to 0", 2)
+end })
 
-WebhookTab:AddButton({Title ="Test Webhook", Callback = function()
+WebhookTab:AddButton({Title = "Test Webhook", Callback = function()
     if Settings.WebhookEnabled and Settings.WebhookURL ~= "" then
         local testFields = {}
         for _, field in ipairs(Settings.WebhookMatchFields) do
-            if field == "Result" then
-                table.insert(testFields, { name = "Результат", value = "ТЕСТ", inline = false })
-            elseif field == "Streak" then
-                table.insert(testFields, { name = "Win Streak", value = "3", inline = true })
-            elseif field == "Kills" then
-                table.insert(testFields, { name = "Убийств", value = "999", inline = true })
-            elseif field == "Survived" then
-                table.insert(testFields, { name = "Выжил", value = "25", inline = true })
-            elseif field == "Time" then
-                table.insert(testFields, { name = "Время", value = "12:34", inline = true })
-            elseif field == "Items" then
-                table.insert(testFields, { name = "Предметов", value = "99", inline = true })
-            elseif field == "Credits" then
-                table.insert(testFields, { name = "Кредитов", value = "20000", inline = true })
-            elseif field == "Crystals" then
-                table.insert(testFields, { name = "Кристаллов", value = "999", inline = true })
-            elseif field == "Spent" then
-                table.insert(testFields, { name = "Потрачено", value = "999", inline = false })
-            elseif field == "Player" then
-                table.insert(testFields, { name = "Игрок", value = Players.LocalPlayer.Name, inline = true })
-            elseif field == "TotalCredits" then
-                table.insert(testFields, { name = "Total Credits", value = "60000", inline = false })
+            if field == "Result" then table.insert(testFields, { name = "Результат", value = "ТЕСТ", inline = false })
+            elseif field == "Streak" then table.insert(testFields, { name = "Win Streak", value = "3", inline = true })
+            elseif field == "Kills" then table.insert(testFields, { name = "Убийств", value = "999", inline = true })
+            elseif field == "Survived" then table.insert(testFields, { name = "Выжил", value = "25", inline = true })
+            elseif field == "Time" then table.insert(testFields, { name = "Время", value = "12:34", inline = true })
+            elseif field == "Items" then table.insert(testFields, { name = "Предметов", value = "99", inline = true })
+            elseif field == "Credits" then table.insert(testFields, { name = "Кредитов", value = "20000", inline = true })
+            elseif field == "Crystals" then table.insert(testFields, { name = "Кристаллов", value = "999", inline = true })
+            elseif field == "Spent" then table.insert(testFields, { name = "Потрачено", value = "999", inline = false })
+            elseif field == "Player" then table.insert(testFields, { name = "Игрок", value = Players.LocalPlayer.Name, inline = true })
+            elseif field == "TotalCredits" then table.insert(testFields, { name = "Total Credits", value = "60000", inline = false })
             end
         end
         sendMatchWebhook(testFields)
@@ -3113,65 +3369,20 @@ v2.0
 ]] })
 
 local MacroRecorderTab = Window:AddTab({Title = "Macro Recorder", Icon = "rbxassetid://120674109076896"})
-
 MacroRecorderTab:AddSection("Recording")
 
--- Изменяемые бинды. Fluent ожидает Default как строку имени клавиши.
-local function addMacroKeybind(id, title, bindName, fallback, onPress)
-    local defaultKey = MacroBinds[bindName] and MacroBinds[bindName].Name or fallback
-    local ok, control = pcall(function()
-        return MacroRecorderTab:AddKeybind(id, {
-            Title = title,
-            Mode = "Toggle",
-            Default = defaultKey,
-            Callback = function(value)
-                if value == true then
-                    pcall(onPress)
-                end
-            end,
-            ChangedCallback = function(newKey)
-                if newKey then
-                    Macro.SetBind(bindName, newKey)
-                    Macro.SaveSettings()
-                end
-            end
-        })
-    end)
-    if not ok then
-        warn("[MACRO] Failed to create keybind " .. title .. ": " .. tostring(control))
-    end
-    return control
-end
-
-addMacroKeybind("MacroRecordBind", "Record Bind", "Record", "LeftBracket", function()
-    Macro.ToggleRecording()
-end)
-
-addMacroKeybind("MacroStopBind", "Stop Recording Bind", "Stop", "RightBracket", function()
-    if Macro.Recording then Macro.StopRecording() end
-end)
-
-addMacroKeybind("MacroPlayBind", "Play / Stop Bind", "Play", "BackSlash", function()
-    if Macro.Playing then
-        Macro.Playing = false
-        Macro.SetStatus("Playback stopped.")
-    elseif not Macro.Recording then
-        Macro.Play()
-    end
-end)
-
-addMacroKeybind("MacroSaveBind", "Save Macro Bind", "Save", "F6", function()
-    Macro.SaveByBind()
-end)
-
-Macro.Count = MacroRecorderTab:AddParagraph({ Title = "Events", Content = "0/0" })
+Macro.Count = MacroRecorderTab:AddParagraph({ Title = "Events", Content = "Time: 0s / 0s\n0/0" })
 Macro.Status = MacroRecorderTab:AddParagraph({ Title = "Status", Content = "Ready.\n[ - record\n] - stop\n\\ - play / stop" })
 
-MacroRecorderTab:AddButton({ Title = "Start Recording", Description = "[", Callback = function() Macro.StartRecording() end })
-MacroRecorderTab:AddButton({ Title = "Stop Recording", Description = "]", Callback = function() Macro.StopRecording() end })
-MacroRecorderTab:AddButton({ Title = "Play / Stop", Description = "\\", Callback = function()
-    if Macro.Playing then Macro.Playing = false; Macro.SetStatus("Playback stopped.")
-    else Macro.Play() end
+MacroRecorderTab:AddButton({ Title = "Record / Stop Record", Description = "[", Callback = function()
+    Macro.ToggleRecording()
+end })
+MacroRecorderTab:AddButton({ Title = "Play / Stop Play", Description = "\\", Callback = function()
+    if Macro.Playing then
+        Macro.StopPlayback()
+    else
+        Macro.Play()
+    end
 end })
 
 MacroRecorderTab:AddToggle("MacroLoopToggle", {
@@ -3214,22 +3425,57 @@ local function RefreshMacroDropdown()
     end)
 end
 
+-- FIX 1: assign RefreshList so SaveByBind can call it
+Macro.RefreshList = RefreshMacroDropdown
+
 MacroRecorderTab:AddButton({ Title = "Save", Callback = function()
-    local name = (macroNameInput and macroNameInput ~= "") and macroNameInput or Macro.SelectedName
-    if not name or name == "" then
-        notifyUser("Macro Recorder", "Type a name first.", 2)
-        return
-    end
-    if Macro.Recording then Macro.StopRecording() end
-    if Macro.Playing then Macro.Playing = false end
-    if Macro.SaveNamed(name) then
-        Macro.SelectedName = name
-        Macro.RememberLast(name)
-        task.defer(function()
-            if RefreshMacroDropdown then pcall(RefreshMacroDropdown) end
-        end)
-    end
+    Macro.SaveByBind()
 end })
+
+function Macro.AutoSave()
+    if not Settings.MacroAutoSaveEnabled then return false end
+    local name = Macro.SelectedName
+    if (not name or name == "") and macroNameInput ~= "" then name = macroNameInput end
+    if (not name or name == "") and Macro.GetLastSelected then name = Macro.GetLastSelected() end
+    if not name or name == "" or #Macro.Data == 0 then return false end
+    local ok = pcall(function()
+        local folder = "MacroRecorderData"
+        if not isfolder(folder) then makefolder(folder) end
+        local out = {}
+        for _, action in ipairs(Macro.Data) do
+            local entry = {
+                Type = action.Type,
+                State = action.State,
+                Time = tonumber(action.Time) or 0,
+                X = action.X,
+                Y = action.Y,
+            }
+            if typeof(action.Key) == "EnumItem" then
+                entry.Key = action.Key.Name
+            elseif action.Key ~= nil then
+                entry.Key = action.Key
+            end
+            table.insert(out, entry)
+        end
+        writefile(folder .. "/" .. name .. ".json", HttpService:JSONEncode(out))
+    end)
+    if ok then
+        Macro.SelectedName = name
+        task.defer(function() pcall(RefreshMacroDropdown) end)
+    end
+    return ok
+end
+
+if not Macro._AutoSaveLoop then
+    Macro._AutoSaveLoop = task.spawn(function()
+        while true do
+            task.wait(math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3))
+            if Settings.MacroAutoSaveEnabled and Macro.Recording and #Macro.Data > 0 then
+                pcall(Macro.AutoSave)
+            end
+        end
+    end)
+end
 
 MacroRecorderTab:AddButton({ Title = "Load", Callback = function()
     if Macro.Recording or Macro.Playing then return end
@@ -3237,7 +3483,10 @@ MacroRecorderTab:AddButton({ Title = "Load", Callback = function()
 end })
 
 MacroRecorderTab:AddButton({ Title = "Remove", Callback = function()
-    if not Macro.SelectedName or Macro.SelectedName == "" then notifyUser("Macro Recorder", "No macro selected.", 2) return end
+    if not Macro.SelectedName or Macro.SelectedName == "" then
+        notifyUser("Macro Recorder", "No macro selected.", 2)
+        return
+    end
     Macro.RemoveNamed(Macro.SelectedName)
     Macro.SelectedName = nil
     Macro.RememberLast(nil)
@@ -3247,28 +3496,6 @@ end })
 MacroRecorderTab:AddSection("Settings")
 
 MacroRecorderTab:AddParagraph({ Title = "Keybinds", Content = "[ = toggle recording\n] = start / stop playback" })
-
-
-MacroRecorderTab:AddToggle("MacroAutoSaveEnabled", {
-    Title = "Auto Save Macro",
-    Description = "Automatically saves the current macro while recording.",
-    Default = Settings.MacroAutoSaveEnabled == true,
-    Callback = function(v)
-        Settings.MacroAutoSaveEnabled = v == true
-        Settings.MacroAutoSave = Settings.MacroAutoSaveEnabled
-        Macro.SaveSettings()
-    end
-})
-
-MacroRecorderTab:AddSlider("MacroAutoSaveInterval", {
-    Title = "Auto Save Interval (s)",
-    Min = 1, Max = 30, Rounding = 1,
-    Default = tonumber(Settings.MacroAutoSaveInterval) or 3,
-    Callback = function(v)
-        Settings.MacroAutoSaveInterval = tonumber(v) or 3
-        Macro.SaveSettings()
-    end
-})
 
 MacroRecorderTab:AddToggle("MacroAutoLoadOnStart", {
     Title = "Auto-load macro on start",
@@ -3297,6 +3524,120 @@ MacroRecorderTab:AddSlider("MacroAutoStartDelay", {
     Callback = function(v) Settings.MacroAutoStartDelay = tonumber(v) or 0; Macro.SaveSettings() end
 })
 
+MacroRecorderTab:AddToggle("MacroAutoSaveEnabled", {
+    Title = "Auto Save Macro",
+    Description = "Automatically saves the current recording.",
+    Default = Settings.MacroAutoSaveEnabled,
+    Callback = function(v) Settings.MacroAutoSaveEnabled = v; Macro.SaveSettings() end
+})
+
+MacroRecorderTab:AddSlider("MacroAutoSaveInterval", {
+    Title = "Auto Save Interval (s)",
+    Min = 1, Max = 30, Rounding = 1,
+    Default = Settings.MacroAutoSaveInterval,
+    Callback = function(v) Settings.MacroAutoSaveInterval = tonumber(v) or 3; Macro.SaveSettings() end
+})
+
+MacroRecorderTab:AddSection("Keybind Settings")
+
+MacroRecorderTab:AddParagraph({
+    Title = "Rebind Keys",
+    Content = "Нажми кнопку нужного бинда, затем нажми клавишу. Record/Stop Record и Play/Stop Play используют одну клавишу."
+})
+
+local bindInfoLabel = MacroRecorderTab:AddParagraph({
+    Title = "Current Binds",
+    Content = string.format(
+        "Record / Stop Record: %s\nPlay / Stop Play: %s\nSave: %s",
+        MacroBinds.Record.Name, MacroBinds.Play.Name, MacroBinds.Save.Name
+    )
+})
+
+local function updateBindLabel()
+    pcall(function()
+        bindInfoLabel:SetDesc(string.format(
+            "Record / Stop Record: %s\nPlay / Stop Play: %s\nSave: %s",
+            MacroBinds.Record.Name, MacroBinds.Play.Name, MacroBinds.Save.Name
+        ))
+    end)
+end
+
+local waitingForBind = nil
+local waitBindConn = nil
+
+local function cancelWaitBind()
+    if waitBindConn then waitBindConn:Disconnect(); waitBindConn = nil end
+    waitingForBind = nil
+end
+
+local function startWaitBind(bindName)
+    cancelWaitBind()
+    waitingForBind = bindName
+    local label = bindName == "Record" and "Record / Stop Record"
+        or bindName == "Play" and "Play / Stop Play"
+        or bindName
+    notifyUser("Rebind", "Нажми любую клавишу для бинда: " .. label, 3)
+
+    waitBindConn = game:GetService("UserInputService").InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        local blocked = {
+            [Enum.KeyCode.Escape] = true,
+            [Enum.KeyCode.Return] = true,
+            [Enum.KeyCode.Unknown] = true,
+        }
+        if blocked[input.KeyCode] then
+            cancelWaitBind()
+            notifyUser("Rebind", "Отмена — клавиша не разрешена", 2)
+            return
+        end
+        for name, kc in pairs(MacroBinds) do
+            if kc == input.KeyCode and name ~= bindName then
+                cancelWaitBind()
+                local occupied = name == "Record" and "Record / Stop Record"
+                    or name == "Play" and "Play / Stop Play"
+                    or name
+                notifyUser("Rebind", "Клавиша уже занята: " .. occupied, 3)
+                return
+            end
+        end
+        MacroBinds[bindName] = input.KeyCode
+        cancelWaitBind()
+        updateBindLabel()
+        if Macro.SaveSettings then Macro.SaveSettings() end
+        notifyUser("Rebind", label .. " → " .. input.KeyCode.Name, 2)
+        Macro.SetupInput()
+    end)
+end
+
+MacroRecorderTab:AddButton({
+    Title = "Rebind: Record / Stop Record",
+    Callback = function() startWaitBind("Record") end
+})
+
+MacroRecorderTab:AddButton({
+    Title = "Rebind: Play / Stop Play",
+    Callback = function() startWaitBind("Play") end
+})
+
+MacroRecorderTab:AddButton({
+    Title = "Rebind: Save",
+    Callback = function() startWaitBind("Save") end
+})
+
+MacroRecorderTab:AddButton({
+    Title = "Reset Binds to Default",
+    Callback = function()
+        cancelWaitBind()
+        MacroBinds.Record = Enum.KeyCode.LeftBracket
+        MacroBinds.Play = Enum.KeyCode.BackSlash
+        MacroBinds.Save = Enum.KeyCode.F6
+        updateBindLabel()
+        if Macro.SaveSettings then Macro.SaveSettings() end
+        Macro.SetupInput()
+        notifyUser("Rebind", "Бинды сброшены по умолчанию", 2)
+    end
+})
+
 MacroRecorderTab:AddSection("Debug")
 
 MacroRecorderTab:AddToggle("MacroDebugClicks", {
@@ -3312,6 +3653,9 @@ MacroRecorderTab:AddToggle("MacroCompensateInset", {
     Callback = function(v) Settings.MacroCompensateInset = v; Macro.SaveSettings() end
 })
 
+-- ===========================================================
+-- CONFIG SYSTEM
+-- ===========================================================
 local CONFIG_FOLDER = "SkibidiConfigs"
 local LAST_CONFIG_FILE = CONFIG_FOLDER.."/last.txt"
 if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
@@ -3333,7 +3677,7 @@ local function loadDefault()
     Settings.WebhookURL = ""
     Settings.WebhookMatchTracking = false
     Settings.ShowLogInWebhook = true
-    Settings.WebhookMatchFields = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
+    Settings.WebhookMatchFields = {"Result","Streak","Kills","Survived","Time","Items","Credits","Crystals","Spent","Player","TotalCredits"}
     Settings.MacroModes = {}
     Settings.WalkChance = 40
     Settings.JumpChance = 15
@@ -3342,13 +3686,12 @@ local function loadDefault()
     Settings.PauseMin = 0.05
     Settings.PauseMax = 0.3
     pcall(function() Macro.LoadSettings() end)
-    
+
     pcall(function() Toggle_InstantProxMount:SetValue(Settings.InstantProxMount) end)
     pcall(function() Toggle_AntiMacro:SetValue(Settings.AntiMacro) end)
     pcall(function() Toggle_WebhookEnabled:SetValue(Settings.WebhookEnabled) end)
     pcall(function() Toggle_ShowAllTowers:SetValue(Settings.ShowAllTowers) end)
     pcall(function() Toggle_BlackMarket:SetValue(Settings.BlackMarket) end)
-
     pcall(function() Toggle_NotificationsEnabled:SetValue(Settings.NotificationsEnabled) end)
     pcall(function() Toggle_PotatoGraphics:SetValue(Settings.PotatoGraphics) end)
     pcall(function() if Toggle_AutoRestoreCam then Toggle_AutoRestoreCam:SetValue(Settings.AutoRestoreCam) end end)
@@ -3360,21 +3703,17 @@ local function loadDefault()
     pcall(function() if moveMaxSlider then moveMaxSlider:SetValue(Settings.MoveDurationMax) end end)
     pcall(function() if pauseMinSlider then pauseMinSlider:SetValue(Settings.PauseMin) end end)
     pcall(function() if pauseMaxSlider then pauseMaxSlider:SetValue(Settings.PauseMax) end end)
-    pcall(function() if Toggle_AutoRestoreCam then Toggle_AutoRestoreCam:SetValue(Settings.AutoRestoreCam) end end)
     applyInstantProxMount("restore")
     savedPosition = nil
     savedCoordsText = "(None)"
-    setButtonText(teleportButton, "Teleport to Position (None)")
+    pcall(function() teleportButton:SetTitle("Teleport to Position (None)") end)
     savedCamPos = nil
     savedCamText = "(None)"
     pcall(function() camTeleportButton:SetTitle("Save Camera Position (None)") end)
     updateMatchFieldsText()
     for _, field in ipairs(fieldsList) do
-        if fieldToggles[field] then
-            fieldToggles[field]:SetValue(true)
-        end
+        if fieldToggles[field] then fieldToggles[field]:SetValue(true) end
     end
-
     pcall(function()
         LightingEffects.ResetAll()
         PlayerAura.SetEnabled(false)
@@ -3424,7 +3763,6 @@ end
 local function saveConfig(name)
     if not name or name == "" or name == "default" then return end
     local hrp = getHRP()
-    local cam = workspace.CurrentCamera
     local data = {
         ShowAllTowers = Settings.ShowAllTowers,
         BlackMarket = Settings.BlackMarket,
@@ -3457,6 +3795,13 @@ local function saveConfig(name)
         MacroAutoLoadDelay = Settings.MacroAutoLoadDelay,
         MacroAutoStartPlayback = Settings.MacroAutoStartPlayback,
         MacroAutoStartDelay = Settings.MacroAutoStartDelay,
+        AutoSaveEnabled = Settings.AutoSaveEnabled,
+        MacroAutoSaveEnabled = Settings.MacroAutoSaveEnabled,
+        MacroAutoSaveInterval = Settings.MacroAutoSaveInterval,
+        MacroAutoLoadOnStart = Settings.MacroAutoLoadOnStart,
+        MacroAutoLoadDelay = Settings.MacroAutoLoadDelay,
+        MacroAutoStartPlayback = Settings.MacroAutoStartPlayback,
+        MacroAutoStartDelay = Settings.MacroAutoStartDelay,
         Visual = VisualState,
     }
     writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
@@ -3474,13 +3819,13 @@ local function configExists(name)
 end
 
 local function loadConfig(name)
-    if name == "default" then loadDefault(); return true end
+    ConfigApplying = true
+    if name == "default" then loadDefault(); ConfigApplying = false; return true end
     local path = CONFIG_FOLDER.."/"..name..".json"
-    if not configExists(name) then return false end
+    if not configExists(name) then ConfigApplying = false; return false end
     local ok, data = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
-    if not ok or not data then notifyUser("Config", "Failed to load config: " .. name, 3); return false end
-    
-    -- Безопасное копирование данных с проверками
+    if not ok or not data then ConfigApplying = false; return false end
+
     Settings.ShowAllTowers = data.ShowAllTowers or false
     Settings.BlackMarket = data.BlackMarket or false
     Settings.AntiMacro = data.AntiMacro or false
@@ -3494,18 +3839,15 @@ local function loadConfig(name)
     Settings.WebhookURL = data.WebhookURL or ""
     Settings.WebhookMatchTracking = data.WebhookMatchTracking or false
     Settings.ShowLogInWebhook = data.ShowLogInWebhook ~= false
-    
-    -- Безопасное копирование списка
+
     Settings.WebhookMatchFields = {}
     if data.WebhookMatchFields and type(data.WebhookMatchFields) == "table" then
-        for _, v in ipairs(data.WebhookMatchFields) do
-            table.insert(Settings.WebhookMatchFields, v)
-        end
+        for _, v in ipairs(data.WebhookMatchFields) do table.insert(Settings.WebhookMatchFields, v) end
     end
     if #Settings.WebhookMatchFields == 0 then
-        Settings.WebhookMatchFields = {"Result", "Streak", "Kills", "Survived", "Time", "Items", "Credits", "Crystals", "Spent", "Player", "TotalCredits"}
+        Settings.WebhookMatchFields = {"Result","Streak","Kills","Survived","Time","Items","Credits","Crystals","Spent","Player","TotalCredits"}
     end
-    
+
     Settings.MacroModes = data.MacroModes or {}
     Settings.WalkChance = data.WalkChance or 40
     Settings.JumpChance = data.JumpChance or 15
@@ -3516,6 +3858,13 @@ local function loadConfig(name)
     Settings.MacroLoop = data.MacroLoop or false
     Settings.MacroCompensateInset = data.MacroCompensateInset or false
     Settings.MacroDebugClicks = data.MacroDebugClicks ~= false
+    Settings.AutoSaveEnabled = data.AutoSaveEnabled == true
+    if data.MacroAutoSaveEnabled ~= nil then Settings.MacroAutoSaveEnabled = data.MacroAutoSaveEnabled end
+    if data.MacroAutoSaveInterval ~= nil then Settings.MacroAutoSaveInterval = tonumber(data.MacroAutoSaveInterval) or Settings.MacroAutoSaveInterval end
+    if data.MacroAutoLoadOnStart ~= nil then Settings.MacroAutoLoadOnStart = data.MacroAutoLoadOnStart end
+    if data.MacroAutoLoadDelay ~= nil then Settings.MacroAutoLoadDelay = tonumber(data.MacroAutoLoadDelay) or Settings.MacroAutoLoadDelay end
+    if data.MacroAutoStartPlayback ~= nil then Settings.MacroAutoStartPlayback = data.MacroAutoStartPlayback end
+    if data.MacroAutoStartDelay ~= nil then Settings.MacroAutoStartDelay = tonumber(data.MacroAutoStartDelay) or Settings.MacroAutoStartDelay end
     pcall(function() Macro.LoadSettings() end)
 
     pcall(function() Toggle_ShowAllTowers:SetValue(Settings.ShowAllTowers) end)
@@ -3525,28 +3874,23 @@ local function loadConfig(name)
     pcall(function() Toggle_InstantProxMount:SetValue(Settings.InstantProxMount) end)
     pcall(function() Toggle_PotatoGraphics:SetValue(Settings.PotatoGraphics) end)
     pcall(function() Toggle_WebhookEnabled:SetValue(Settings.WebhookEnabled) end)
-    
+
     pcall(function()
         if macroDropdown then
             local opt = "None"
-            if hasMacroMode("Shiking") and hasMacroMode("Walking") then
-                opt = "Shiking + Walking"
-            elseif hasMacroMode("Shiking") then
-                opt = "Shiking"
-            elseif hasMacroMode("Walking") then
-                opt = "Walking"
-            end
+            if hasMacroMode("Shiking") and hasMacroMode("Walking") then opt = "Shiking + Walking"
+            elseif hasMacroMode("Shiking") then opt = "Shiking"
+            elseif hasMacroMode("Walking") then opt = "Walking" end
             macroDropdown:SetValue(opt)
         end
     end)
-    
+
     pcall(function()
         if walkPresetDropdown then
             local preset = "Custom"
             if Settings.WalkChance == 40 and Settings.JumpChance == 15 and Settings.MoveDurationMin == 0.8 and Settings.MoveDurationMax == 2.5 and Settings.PauseMin == 0.05 and Settings.PauseMax == 0.3 then preset = "Medium"
             elseif Settings.WalkChance == 25 and Settings.JumpChance == 10 then preset = "Slow"
-            elseif Settings.WalkChance == 60 and Settings.JumpChance == 25 then preset = "Fast"
-            end
+            elseif Settings.WalkChance == 60 and Settings.JumpChance == 25 then preset = "Fast" end
             walkPresetDropdown:SetValue(preset)
         end
     end)
@@ -3556,16 +3900,14 @@ local function loadConfig(name)
     pcall(function() if moveMaxSlider then moveMaxSlider:SetValue(Settings.MoveDurationMax) end end)
     pcall(function() if pauseMinSlider then pauseMinSlider:SetValue(Settings.PauseMin) end end)
     pcall(function() if pauseMaxSlider then pauseMaxSlider:SetValue(Settings.PauseMax) end end)
-    
+
     pcall(function() if Settings.InstantProxMount then applyInstantProxMount("set") else applyInstantProxMount("restore") end end)
     pcall(function() stopShowAllTowers(); if Settings.ShowAllTowers then startShowAllTowers() end end)
     pcall(function() if Settings.BlackMarket then startBlackMarket() else stopBlackMarket() end end)
-
     pcall(function() if Settings.AntiAFK then startAntiAFK() end end)
     pcall(function() if Settings.PotatoGraphics then enablePotatoGraphics() else disablePotatoGraphics() end end)
     pcall(function() if Settings.WebhookMatchTracking then startMatchTracking() else stopMatchTracking() end end)
-    pcall(function() if SpeedSlider then SpeedSlider:SetValue(Settings.GameSpeed) end end)
-    
+
     pcall(function()
         updateMatchFieldsText()
         for _, field in ipairs(fieldsList) do
@@ -3574,14 +3916,14 @@ local function loadConfig(name)
             end
         end
     end)
-    
+
     if data.SavedPosition then
         savedPosition = CFrame.new(data.SavedPosition.X, data.SavedPosition.Y, data.SavedPosition.Z)
         local x,y,z = math.floor(data.SavedPosition.X), math.floor(data.SavedPosition.Y), math.floor(data.SavedPosition.Z)
-        pcall(function() setButtonText(teleportButton, "Teleport to Position ("..x..","..y..","..z..")") end)
+        pcall(function() teleportButton:SetTitle("Teleport to Position ("..x..","..y..","..z..")") end)
     else
         savedPosition = nil
-        pcall(function() setButtonText(teleportButton, "Teleport to Position (None)") end)
+        pcall(function() teleportButton:SetTitle("Teleport to Position (None)") end)
     end
 
     if data.SavedCamera then
@@ -3672,6 +4014,7 @@ local function loadConfig(name)
             end
         end)
     end
+    ConfigApplying = false
     return true
 end
 
@@ -3706,21 +4049,31 @@ end
 
 local ConfigTab = Window:AddTab({Title = "Config", Icon = "rbxassetid://11956055886" })
 local selectedLabel = ConfigTab:AddParagraph({Title = "Selected Config", Content = "default" })
-local function updateSelected() pcall(function() selectedLabel:SetDesc(currentConfig) end) end
+function updateSelected() pcall(function() selectedLabel:SetDesc(currentConfig) end) end
 
 local configDropdown = ConfigTab:AddDropdown("Configs", {
     Title = "Configs",
     Values = {"default"},
     Default = "default",
-    Callback = function(opt) currentConfig = opt; rememberLastConfig(opt); updateSelected(); loadConfig(currentConfig) end 
+    Callback = function(opt) currentConfig = opt; rememberLastConfig(opt); updateSelected(); loadConfig(currentConfig) end
 })
 
 local function refreshDropdown()
     local map = { ["default"] = true }
     local ok, files = pcall(function() return listfiles(CONFIG_FOLDER) end)
-    if ok and files then for _, file in ipairs(files) do local name = tostring(file):match("([^\\/]+)%.json$"); if name then map[name] = true end end end
-    local list = {}; for name,_ in pairs(map) do table.insert(list, name) end
-    table.sort(list, function(a,b) if a=="default" then return true end; if b=="default" then return false end; return a<b end)
+    if ok and files then
+        for _, file in ipairs(files) do
+            local name = tostring(file):match("([^\\/]+)%.json$")
+            if name then map[name] = true end
+        end
+    end
+    local list = {}
+    for name,_ in pairs(map) do table.insert(list, name) end
+    table.sort(list, function(a,b)
+        if a=="default" then return true end
+        if b=="default" then return false end
+        return a<b
+    end)
     configDropdown:SetValues(list)
     if currentConfig then configDropdown:SetValue(currentConfig) end
 end
@@ -3728,12 +4081,47 @@ refreshDropdown()
 
 local inputName = ""
 ConfigTab:AddInput("ConfigName", {Title = "Config Name", Placeholder = "Enter name...", Default = "", Callback = function(text) inputName = text end })
-ConfigTab:AddButton({Title ="Create", Callback = function() if inputName=="" or inputName=="default" then return end; currentConfig = inputName; rememberLastConfig(inputName); if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then saveConfig(inputName) end; refreshDropdown(); updateSelected() end })
-ConfigTab:AddButton({Title ="Save", Callback = function() if not currentConfig then return end; saveConfig(currentConfig); AutoSave(); refreshDropdown() end })
-ConfigTab:AddButton({Title ="Load", Callback = function() if not currentConfig then return end; loadConfig(currentConfig) end })
-ConfigTab:AddButton({Title ="Delete", Callback = function() if currentConfig=="default" then return end; local path = CONFIG_FOLDER.."/"..currentConfig..".json"; if isfile(path) then delfile(path) end; if isfile(LAST_CONFIG_FILE) and readfile(LAST_CONFIG_FILE) == currentConfig then delfile(LAST_CONFIG_FILE) end; currentConfig="default"; loadDefault(); refreshDropdown(); updateSelected() end })
-ConfigTab:AddToggle("AutoLoad", {Title = "Auto Load", Default = Settings.AutoLoadEnabled, Callback = function(v) Settings.AutoLoadEnabled=v; if Settings.AutoSaveEnabled and currentConfig ~= "default" then saveConfig(currentConfig) end end })
-ConfigTab:AddToggle("AutoSave", {Title = "Auto Save", Default = Settings.AutoSaveEnabled, Callback = function(v) Settings.AutoSaveEnabled=v; if v and currentConfig ~= "default" then saveConfig(currentConfig) end end })
+ConfigTab:AddButton({Title = "Create", Callback = function()
+    if inputName == "" or inputName == "default" then return end
+    currentConfig = inputName
+    rememberLastConfig(inputName)
+    if not isfile(CONFIG_FOLDER.."/"..inputName..".json") then saveConfig(inputName) end
+    refreshDropdown()
+    updateSelected()
+end })
+ConfigTab:AddButton({Title = "Save", Callback = function()
+    if not currentConfig then return end
+    saveConfig(currentConfig)
+    AutoSave()
+    refreshDropdown()
+end })
+ConfigTab:AddButton({Title = "Load", Callback = function()
+    if not currentConfig then return end
+    loadConfig(currentConfig)
+end })
+ConfigTab:AddButton({Title = "Delete", Callback = function()
+    if currentConfig == "default" then return end
+    local path = CONFIG_FOLDER.."/"..currentConfig..".json"
+    if isfile(path) then delfile(path) end
+    if isfile(LAST_CONFIG_FILE) and readfile(LAST_CONFIG_FILE) == currentConfig then delfile(LAST_CONFIG_FILE) end
+    currentConfig = "default"
+    loadDefault()
+    refreshDropdown()
+    updateSelected()
+end })
+ConfigTab:AddToggle("AutoLoad", {
+    Title = "Auto Load",
+    Default = Settings.AutoLoadEnabled,
+    Callback = function(v) Settings.AutoLoadEnabled = v end
+})
+ConfigTab:AddToggle("AutoSave", {
+    Title = "Auto Save",
+    Default = Settings.AutoSaveEnabled,
+    Callback = function(v)
+        Settings.AutoSaveEnabled = v
+        if currentConfig ~= "default" then pcall(function() saveConfig(currentConfig) end) end
+    end
+})
 
 task.spawn(function()
     task.wait(1)
@@ -3747,22 +4135,23 @@ task.spawn(function()
             if camConn and Settings.AntiMacro then lockedCF = savedCamPos end
         end
     end)
+
+    -- Initialization is finished: notifications are enabled from this point.
+    ScriptInitializing = false
+    notifyUser("Skibidi Defense", "v2.6 loaded! (Fluent UI)", 3)
 end)
 
--- Исправленный AutoSave цикл
-task.spawn(function() 
-    while autoSaveRunning do 
-        task.wait(20) 
-        AutoSave() 
-    end 
+task.spawn(function()
+    while autoSaveRunning do
+        task.wait(20)
+        AutoSave()
+    end
 end)
 
-notifyUser("Skibidi Defense", "v2.6 loaded! (Fluent UI)", 3)
 print("[Loader] Skibidi Defense v2.6 loaded successfully!")
 
 pcall(function() Window:SelectTab(1) end)
 
--- Macro Recorder: restore last selected and auto-load
 task.spawn(function()
     task.wait(2)
     local rememberedName = Macro.GetLastSelected()
@@ -3788,7 +4177,6 @@ task.spawn(function()
     end
 end)
 
--- Проверка fireclickdetector
 pcall(function()
     if type(fireclickdetector) ~= "function" then
         notifyUser("Macro Recorder", "fireclickdetector not available. ClickDetector clicks won't work.", 6)
