@@ -1681,6 +1681,7 @@ do
                     if now - (Macro.LastSaveTime or -math.huge) < KeybindCooldown then return end
                     Macro.LastSaveTime = now
                     Macro.SaveByBind()
+                    pcall(Macro.SaveSettings)
                     return
                 end
                 -- неизвестный бинд — всё равно не пишем в макрос
@@ -1788,6 +1789,9 @@ do
     function Macro.SaveSettings()
         pcall(function()
             if not isfolder(SaveFolder) then makefolder(SaveFolder) end
+            -- Macro settings are stored separately from SkibidiConfigs.
+            -- This means Save bind + Auto Save interval survive even when no config exists.
+            Settings.MacroAutoSaveInterval = math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3)
             writefile(SettingsFile, HttpService:JSONEncode({
                 AutoLoadOnStart = Settings.MacroAutoLoadOnStart,
                 AutoLoadDelay = Settings.MacroAutoLoadDelay,
@@ -1831,6 +1835,11 @@ do
         end
     end
     Macro.LoadSettings()
+    -- Create the independent macro settings file once, so defaults are persistent
+    -- even when the user never creates/loads a Skibidi config.
+    pcall(function()
+        if not isfile(SettingsFile) then Macro.SaveSettings() end
+    end)
 end
 
 -- ИНИЦИАЛИЗАЦИЯ
@@ -3535,7 +3544,10 @@ MacroRecorderTab:AddSlider("MacroAutoSaveInterval", {
     Title = "Auto Save Interval (s)",
     Min = 1, Max = 30, Rounding = 1,
     Default = Settings.MacroAutoSaveInterval,
-    Callback = function(v) Settings.MacroAutoSaveInterval = tonumber(v) or 3; Macro.SaveSettings() end
+    Callback = function(v)
+        Settings.MacroAutoSaveInterval = math.max(1, tonumber(v) or 3)
+        Macro.SaveSettings()
+    end
 })
 
 MacroRecorderTab:AddSection("Keybind Settings")
