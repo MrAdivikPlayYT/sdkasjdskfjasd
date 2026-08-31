@@ -1032,8 +1032,6 @@ do
         notifyUser("Macro Recorder", "Recording started — press [", 2)
     end
 
-    Macro._LastAutoSave = 0
-
     function Macro.StopRecording()
         if not Macro.Recording then return end
         Macro.Recording = false
@@ -1681,7 +1679,6 @@ do
                     if now - (Macro.LastSaveTime or -math.huge) < KeybindCooldown then return end
                     Macro.LastSaveTime = now
                     Macro.SaveByBind()
-                    pcall(Macro.SaveSettings)
                     return
                 end
                 -- неизвестный бинд — всё равно не пишем в макрос
@@ -1789,9 +1786,6 @@ do
     function Macro.SaveSettings()
         pcall(function()
             if not isfolder(SaveFolder) then makefolder(SaveFolder) end
-            -- Macro settings are stored separately from SkibidiConfigs.
-            -- This means Save bind + Auto Save interval survive even when no config exists.
-            Settings.MacroAutoSaveInterval = math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3)
             writefile(SettingsFile, HttpService:JSONEncode({
                 AutoLoadOnStart = Settings.MacroAutoLoadOnStart,
                 AutoLoadDelay = Settings.MacroAutoLoadDelay,
@@ -1835,11 +1829,6 @@ do
         end
     end
     Macro.LoadSettings()
-    -- Create the independent macro settings file once, so defaults are persistent
-    -- even when the user never creates/loads a Skibidi config.
-    pcall(function()
-        if not isfile(SettingsFile) then Macro.SaveSettings() end
-    end)
 end
 
 -- ИНИЦИАЛИЗАЦИЯ
@@ -2378,30 +2367,18 @@ end
 
 local function getPingText() return tostring(getPingNumber()) end
 
-local cachedRegion = nil
 local cachedServerInfo = nil
 local cachedExecutor = nil
 local cachedExecutorVersion = nil
-
--- Client scripts cannot directly read the physical Roblox server datacenter.
--- If a server-side script replicates ServerRegion, use it; otherwise show unavailable.
-local function getServerRegion()
-    local r = "Server region unavailable"
-    pcall(function()
-        local v = game:GetService("ReplicatedStorage"):GetAttribute("ServerRegion")
-        if type(v) == "string" and v ~= "" then r = v end
-    end)
-    return r
-end
 
 local function getExecutorInfo()
     if cachedExecutor then return cachedExecutor, cachedExecutorVersion end
     local name, version = "Unknown", ""
     pcall(function()
         if type(identifyexecutor) == "function" then
-            local a, b = identifyexecutor()
+            local a, bb = identifyexecutor()
             if type(a) == "string" and a ~= "" then name = a end
-            if type(b) == "string" then version = b end
+            if type(bb) == "string" then version = bb end
         elseif type(getexecutorname) == "function" then
             local a = getexecutorname()
             if type(a) == "string" and a ~= "" then name = a end
@@ -2412,23 +2389,6 @@ local function getExecutorInfo()
     end)
     cachedExecutor, cachedExecutorVersion = name, version
     return name, version
-end
-
-local function getSUNCInfo()
-    local score = nil
-    pcall(function()
-        if type(getsuncscore) == "function" then score = getsuncscore() end
-        if score == nil and type(suncscore) == "number" then score = suncscore end
-        if score == nil and type(getgenv) == "function" then
-            local env = getgenv()
-            if env and type(env.sUNC) == "number" then score = env.sUNC end
-            if env and type(env.SUNC) == "number" then score = env.SUNC end
-        end
-    end)
-    if type(score) == "number" then
-        return string.format("%g%%", score > 1 and score or score * 100)
-    end
-    return "N/A"
 end
 
 local function getServerInfo()
@@ -2456,20 +2416,16 @@ end
 
 task.spawn(function()
     while true do
-        local serverUptime = workspace.DistributedGameTime
         local scriptTime = tick() - startTime
-        local serverTime = os.date("%H:%M:%S")
         local pingText = getPingText()
-        local serverRegion = getServerRegion()
-        local executorName, executorVersion = getExecutorInfo()
-        local suncInfo = getSUNCInfo()
         local serverInfo = getServerInfo()
+        local executorName, executorVersion = getExecutorInfo()
         pcall(function()
             infoParagraph:SetTitle("Stats")
             infoParagraph:SetDesc(string.format(
-                "Server UpTime: %s\nScript Time: %s\nServer Region: %s\nServer: %s\nPing: %sms\nFPS: %d\nExecutor: %s%s\nSUNC: %s",
-                formatTime(serverUptime), formatTime(scriptTime), serverRegion, serverInfo, pingText, fps,
-                executorName, executorVersion ~= "" and (" " .. executorVersion) or "", suncInfo
+                "Time: %s\nServer: %s\nPing: %sms\nFPS: %d\nExecutor: %s%s",
+                formatTime(scriptTime), serverInfo, pingText, fps,
+                executorName, executorVersion ~= "" and (" " .. executorVersion) or ""
             ))
         end)
         task.wait(1)
@@ -3444,8 +3400,9 @@ end })
 function Macro.AutoSave()
     if not Settings.MacroAutoSaveEnabled then return false end
     local name = Macro.SelectedName
-    if (not name or name == "") and macroNameInput ~= "" then name = macroNameInput end
-    if (not name or name == "") and Macro.GetLastSelected then name = Macro.GetLastSelected() end
+    if (not name or name == "") and macroNameInput ~= "" then
+        name = macroNameInput
+    end
     if not name or name == "" or #Macro.Data == 0 then return false end
     local ok = pcall(function()
         local folder = "MacroRecorderData"
@@ -3544,10 +3501,7 @@ MacroRecorderTab:AddSlider("MacroAutoSaveInterval", {
     Title = "Auto Save Interval (s)",
     Min = 1, Max = 30, Rounding = 1,
     Default = Settings.MacroAutoSaveInterval,
-    Callback = function(v)
-        Settings.MacroAutoSaveInterval = math.max(1, tonumber(v) or 3)
-        Macro.SaveSettings()
-    end
+    Callback = function(v) Settings.MacroAutoSaveInterval = tonumber(v) or 3; Macro.SaveSettings() end
 })
 
 MacroRecorderTab:AddSection("Keybind Settings")
@@ -3807,13 +3761,6 @@ local function saveConfig(name)
         MacroAutoLoadDelay = Settings.MacroAutoLoadDelay,
         MacroAutoStartPlayback = Settings.MacroAutoStartPlayback,
         MacroAutoStartDelay = Settings.MacroAutoStartDelay,
-        AutoSaveEnabled = Settings.AutoSaveEnabled,
-        MacroAutoSaveEnabled = Settings.MacroAutoSaveEnabled,
-        MacroAutoSaveInterval = Settings.MacroAutoSaveInterval,
-        MacroAutoLoadOnStart = Settings.MacroAutoLoadOnStart,
-        MacroAutoLoadDelay = Settings.MacroAutoLoadDelay,
-        MacroAutoStartPlayback = Settings.MacroAutoStartPlayback,
-        MacroAutoStartDelay = Settings.MacroAutoStartDelay,
         Visual = VisualState,
     }
     writefile(CONFIG_FOLDER.."/"..name..".json", HttpService:JSONEncode(data))
@@ -3870,13 +3817,6 @@ local function loadConfig(name)
     Settings.MacroLoop = data.MacroLoop or false
     Settings.MacroCompensateInset = data.MacroCompensateInset or false
     Settings.MacroDebugClicks = data.MacroDebugClicks ~= false
-    Settings.AutoSaveEnabled = data.AutoSaveEnabled == true
-    if data.MacroAutoSaveEnabled ~= nil then Settings.MacroAutoSaveEnabled = data.MacroAutoSaveEnabled end
-    if data.MacroAutoSaveInterval ~= nil then Settings.MacroAutoSaveInterval = tonumber(data.MacroAutoSaveInterval) or Settings.MacroAutoSaveInterval end
-    if data.MacroAutoLoadOnStart ~= nil then Settings.MacroAutoLoadOnStart = data.MacroAutoLoadOnStart end
-    if data.MacroAutoLoadDelay ~= nil then Settings.MacroAutoLoadDelay = tonumber(data.MacroAutoLoadDelay) or Settings.MacroAutoLoadDelay end
-    if data.MacroAutoStartPlayback ~= nil then Settings.MacroAutoStartPlayback = data.MacroAutoStartPlayback end
-    if data.MacroAutoStartDelay ~= nil then Settings.MacroAutoStartDelay = tonumber(data.MacroAutoStartDelay) or Settings.MacroAutoStartDelay end
     pcall(function() Macro.LoadSettings() end)
 
     pcall(function() Toggle_ShowAllTowers:SetValue(Settings.ShowAllTowers) end)
@@ -4131,7 +4071,7 @@ ConfigTab:AddToggle("AutoSave", {
     Default = Settings.AutoSaveEnabled,
     Callback = function(v)
         Settings.AutoSaveEnabled = v
-        if currentConfig ~= "default" then pcall(function() saveConfig(currentConfig) end) end
+        if v and currentConfig ~= "default" then saveConfig(currentConfig) end
     end
 })
 
