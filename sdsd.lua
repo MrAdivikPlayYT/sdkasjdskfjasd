@@ -689,45 +689,56 @@ local function togglePotatoGraphics(enabled)
 end
 
 local function showAllTowers()
-    if isUpdating then return end
-    isUpdating = true
-    pcall(function()
-        local player = Players.LocalPlayer
-        local playerGui = player:FindFirstChild("PlayerGui")
-        if not playerGui then return end
-        local main = playerGui:FindFirstChild("Main")
-        if not main then return end
-        for _, grid in ipairs(main:GetDescendants()) do
-            if grid.Name == "Grid" then
-                for _, button in ipairs(grid:GetDescendants()) do
-                    if button:IsA("TextButton") or button:IsA("ImageButton") then
-                        if originalVisibility[button] == nil then originalVisibility[button] = button.Visible end
-                        if button.Visible ~= true then button.Visible = true end
+    local player = Players.LocalPlayer
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+    local main = playerGui:FindFirstChild("Main")
+    if not main then return end
+
+    -- Сначала сами Grid-ы (не через GetDescendants всего GUI)
+    for _, obj in ipairs(main:GetChildren()) do
+        if obj:IsA("GuiObject") then
+            -- Grid может быть внутри Frame/ScrollingFrame
+            local grids = { obj }
+            if obj:IsA("GuiObject") then
+                for _, child in ipairs(obj:GetDescendants()) do
+                    if child.Name == "Grid" then
+                        table.insert(grids, child)
                     end
                 end
-                if grid.Visible ~= true then grid.Visible = true end
+            end
+
+            for _, grid in ipairs(grids) do
+                if grid.Name == "Grid" or grid == obj then
+                    -- Кнопки внутри Grid (только прямые дети — их немного)
+                    for _, button in ipairs(grid:GetChildren()) do
+                        if button:IsA("TextButton") or button:IsA("ImageButton") then
+                            if originalVisibility[button] == nil then
+                                originalVisibility[button] = button.Visible
+                            end
+                            if not button.Visible then
+                                button.Visible = true
+                            end
+                        end
+                    end
+                end
             end
         end
-    end)
-    isUpdating = false
+    end
 end
 
-local function restoreOriginalTowers()
-    for button, visible in pairs(originalVisibility) do pcall(function() if button.Visible ~= visible then button.Visible = visible end end) end
-    originalVisibility = {}
-end
-
+local lastShowAllCheck = 0
 local function startShowAllTowers()
     if showAllTowersConnection then return end
     showAllTowers()
-    showAllTowersConnection = RunService.Stepped:Connect(function()
-        if Settings.ShowAllTowers then showAllTowers() end
+    -- Проверка раз в 0.5 сек вместо каждого кадра
+    showAllTowersConnection = RunService.Heartbeat:Connect(function()
+        if not Settings.ShowAllTowers then return end
+        local now = tick()
+        if now - lastShowAllCheck < 0.5 then return end
+        lastShowAllCheck = now
+        showAllTowers()
     end)
-end
-
-local function stopShowAllTowers()
-    if showAllTowersConnection then showAllTowersConnection:Disconnect(); showAllTowersConnection = nil end
-    restoreOriginalTowers()
 end
 
 local blackMarketConnection = nil
@@ -2434,15 +2445,206 @@ end)
 
 MainTab:AddSection("Lobby")
 
-local Toggle_ShowAllTowers = MainTab:AddToggle("Toggle_ShowAllTowers", {
-    Title = "Show All Towers",
-    Default = Settings.ShowAllTowers,
-    Callback = function(v)
-        Settings.ShowAllTowers = v
-        if v then startShowAllTowers(); notifyUser("Show All Towers", "Enabled", 2)
-        else stopShowAllTowers(); notifyUser("Show All Towers", "Disabled", 2) end
-    end
-})
+-- ═══════════════════════════════════════════
+-- SHOW ALL TOWERS
+-- ═══════════════════════════════════════════
+local function SetupShowAllTowers()
+    local Toggle_ShowAllTowers = MainTab:AddToggle("Toggle_ShowAllTowers", {
+        Title = "Show All Towers",
+        Default = Settings.ShowAllTowers,
+        Callback = function(v)
+            Settings.ShowAllTowers = v
+            if v then
+                startShowAllTowers()
+                notifyUser("Show All Towers", "Enabled", 2)
+            else
+                stopShowAllTowers()
+                notifyUser("Show All Towers", "Disabled", 2)
+            end
+        end
+    })
+end
+SetupShowAllTowers()
+
+-- ═══════════════════════════════════════════
+-- AUTO CRATES
+-- ═══════════════════════════════════════════
+local function SetupAutoCrates()
+    local RS_Crates = game:GetService("ReplicatedStorage")
+
+    local CrateOpenTypes = {
+        [1] = "Одиночное (1)",
+        [2] = "Среднее (10)",
+        [3] = "Массовое (25)",
+    }
+
+    local CrateRewards = {
+        "Golden",
+        "Diamond",
+        "Mega Diamond",
+        "Mega Golden",
+        "Diamond Premium",
+        "Golden Premium",
+        "Cursed",
+        "Drawn Credits",
+        "Diamond Golden",
+        "MultiVerse Diamond",
+        "Multiverse Premium",
+        "Golden Multiverse Premium",
+        "Diamond Multiverse",
+        "Mulitverse",
+    }
+
+    local NotGamblingRemote, OpeningRemote
+    pcall(function()
+        NotGamblingRemote = RS_Crates:WaitForChild("NotGambling", 5)
+        if NotGamblingRemote then
+            OpeningRemote = NotGamblingRemote:WaitForChild("Opening", 5)
+        end
+    end)
+
+    local State = {
+        Running  = false,
+        OpenType = 3,
+        Reward   = "Golden",
+        Amount   = 1,
+        Counter  = 0,
+    }
+
+    local StatusPara = MainTab:AddParagraph({
+        Title = "Auto Crates",
+        Content = (NotGamblingRemote and OpeningRemote)
+            and "✅ NotGambling + Opening найдены"
+            or "❌ NotGambling / Opening не найдены",
+    })
+
+    local TypeDD = MainTab:AddDropdown("CrateOpenType", {
+        Title = "Тип открытия",
+        Values = { CrateOpenTypes[1], CrateOpenTypes[2], CrateOpenTypes[3] },
+        Multi = false,
+        Default = CrateOpenTypes[3],
+    })
+
+    TypeDD:OnChanged(function(v)
+        for k, name in pairs(CrateOpenTypes) do
+            if name == v then State.OpenType = k; break end
+        end
+        print("[AutoCrates] Тип: " .. v .. " (аргумент " .. State.OpenType .. ")")
+    end)
+
+    local RewardDD = MainTab:AddDropdown("CrateReward", {
+        Title = "Награда",
+        Values = CrateRewards,
+        Multi = false,
+        Default = "Golden",
+    })
+
+    RewardDD:OnChanged(function(v)
+        State.Reward = v
+        print("[AutoCrates] Награда: " .. v)
+    end)
+
+    local AmountIn = MainTab:AddInput("CrateAmount", {
+        Title = "Сколько РАЗ открыть",
+        Description = "-1 = бесконечно",
+        Default = "1",
+        Placeholder = "1 / 5 / 10 / -1",
+    })
+
+    AmountIn:OnChanged(function(v)
+        State.Amount = tonumber(v) or 1
+        print("[AutoCrates] Кол-во: " .. State.Amount)
+    end)
+
+    local ProgPara = MainTab:AddParagraph({
+        Title = "Прогресс",
+        Content = "Ожидание...",
+    })
+
+    local DelaySlider = MainTab:AddSlider("CrateDelay", {
+        Title = "Задержка между крутками",
+        Description = "Секунды (0.05 - 2)",
+        Default = 0.15,
+        Min = 0.05,
+        Max = 2,
+        Rounding = 2,
+        Callback = function(v) Settings.CrateDelay = v end,
+    })
+
+    local Toggle
+    Toggle = MainTab:AddToggle("CrateAutoOpen", {
+        Title = "Авто-открытие круток",
+        Description = "Старт / Стоп",
+        Default = false,
+        Callback = function(v)
+            if not v then
+                State.Running = false
+                return
+            end
+            if State.Running then return end
+            if not NotGamblingRemote or not OpeningRemote then
+                notifyUser("Auto Crates", "NotGambling / Opening не найдены!", 3)
+                Toggle:SetValue(false)
+                return
+            end
+
+            State.Running = true
+            State.Counter = 0
+
+            task.spawn(function()
+                while State.Running do
+                    pcall(function()
+                        OpeningRemote:FireServer()
+                        task.wait(0.05)
+                        NotGamblingRemote:FireServer(State.OpenType, State.Reward)
+                    end)
+
+                    State.Counter = State.Counter + 1
+
+                    pcall(function()
+                        ProgPara:SetDesc(
+                            "Открыто: " .. State.Counter ..
+                            (State.Amount == -1 and " (∞)" or "/" .. State.Amount)
+                        )
+                    end)
+
+                    if State.Amount ~= -1 and State.Counter >= State.Amount then
+                        State.Running = false
+                        pcall(function()
+                            Toggle:SetValue(false)
+                            ProgPara:SetDesc("✅ Готово: " .. State.Counter .. " раз")
+                        end)
+                        break
+                    end
+
+                    task.wait(Settings.CrateDelay)
+                end
+
+                if not State.Running then
+                    pcall(function()
+                        ProgPara:SetDesc("🛑 Стоп на " .. State.Counter .. " раз")
+                    end)
+                end
+            end)
+        end,
+    })
+
+    MainTab:AddButton({
+        Title = "Проверить NotGambling",
+        Callback = function()
+            local ng = RS_Crates:FindFirstChild("NotGambling")
+            local op = ng and ng:FindFirstChild("Opening")
+            if ng and op then
+                notifyUser("Auto Crates", "✅ найдены", 3)
+                StatusPara:SetDesc("✅ NotGambling + Opening найдены")
+            else
+                notifyUser("Auto Crates", "❌ не найдены", 3)
+                StatusPara:SetDesc("❌ NotGambling / Opening отсутствуют")
+            end
+        end,
+    })
+end
+SetupAutoCrates()
 
 MainTab:AddSection("Trading Plaza")
 
