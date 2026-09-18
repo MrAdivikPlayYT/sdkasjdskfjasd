@@ -113,7 +113,7 @@ local function main()
         MacroAutoStartPlayback = false,
         MacroAutoStartDelay = 2,
         AutoSaveEnabled = false,
-        AutoLoadEnabled = false,
+        AutoLoadEnabled = true,
         MacroAutoSaveEnabled = false,
         MacroAutoSaveInterval = 3,
         MacroSelectedName = "",
