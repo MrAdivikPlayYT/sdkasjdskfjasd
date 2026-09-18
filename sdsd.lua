@@ -108,16 +108,16 @@ local function main()
         MacroLoop = false,
         MacroCompensateInset = false,
         MacroDebugClicks = true,
-        MacroAutoLoadOnStart = true,
+        MacroAutoLoadOnStart = false,
         MacroAutoLoadDelay = 2,
         MacroAutoStartPlayback = false,
         MacroAutoStartDelay = 2,
         AutoSaveEnabled = false,
-        AutoLoadEnabled = true,
+        AutoLoadEnabled = false,
         MacroAutoSaveEnabled = false,
         MacroAutoSaveInterval = 3,
-        MacroAutoSaveBackupEnabled = true,
         MacroSelectedName = "",
+        CrateDelay = 0.15,
     }
 
     local winStreak = 0
@@ -922,7 +922,6 @@ local function main()
     local macroAutoLoadToggle, macroAutoLoadDelaySlider
     local macroAutoStartToggle, macroAutoStartDelaySlider
     local macroAutoSaveToggle, macroAutoSaveIntervalSlider
-    local macroAutoSaveBackupToggle
     local macroDebugToggle, macroCompensateToggle
     local configAutoLoadToggle, configAutoSaveToggle
 
@@ -1099,9 +1098,6 @@ local function main()
                 task.spawn(function()
                     pcall(function()
                         if Macro.AutoSave then pcall(Macro.AutoSave) end
-                        if Settings.MacroAutoSaveBackupEnabled and Macro.AutoSaveBackup then
-                            pcall(Macro.AutoSaveBackup)
-                        end
                         if Macro.SaveSettings then pcall(Macro.SaveSettings) end
                     end)
                 end)
@@ -1573,7 +1569,6 @@ local function main()
                     },
                     MacroAutoSaveEnabled = Settings.MacroAutoSaveEnabled == true,
                     MacroAutoSaveInterval = tonumber(Settings.MacroAutoSaveInterval) or 3,
-                    MacroAutoSaveBackupEnabled = Settings.MacroAutoSaveBackupEnabled == true,
                     SelectedName = Macro.SelectedName or Settings.MacroSelectedName,
                 }))
             end)
@@ -1591,28 +1586,20 @@ local function main()
             if data.CompensateInset ~= nil then Settings.MacroCompensateInset = data.CompensateInset end
             if data.DebugClicks ~= nil then Settings.MacroDebugClicks = data.DebugClicks end
             if data.Loop ~= nil then Settings.MacroLoop = data.Loop end
-
             if data.MacroAutoSaveEnabled ~= nil then
                 Settings.MacroAutoSaveEnabled = data.MacroAutoSaveEnabled == true
             elseif data.AutoSaveEnabled ~= nil then
                 Settings.MacroAutoSaveEnabled = data.AutoSaveEnabled == true
             end
-
             if data.MacroAutoSaveInterval ~= nil then
                 Settings.MacroAutoSaveInterval = tonumber(data.MacroAutoSaveInterval) or 3
             elseif data.AutoSaveInterval ~= nil then
                 Settings.MacroAutoSaveInterval = tonumber(data.AutoSaveInterval) or 3
             end
-
-            if data.MacroAutoSaveBackupEnabled ~= nil then
-                Settings.MacroAutoSaveBackupEnabled = data.MacroAutoSaveBackupEnabled == true
-            end
-
             if data.SelectedName and data.SelectedName ~= "" then
                 Macro.SelectedName = data.SelectedName
                 Settings.MacroSelectedName = data.SelectedName
             end
-
             if type(data.MacroBinds) == "table" then
                 for bindName, keyName in pairs(data.MacroBinds) do
                     if MacroBinds[bindName] and type(keyName) == "string" and Enum.KeyCode[keyName] then
@@ -2113,14 +2100,14 @@ local function main()
 
     local Window = Fluent:CreateWindow({
         Title = "Skibidi Defense Script (Private)",
-        SubTitle = "v2.8",
+        SubTitle = "v3.0",
         TabWidth = 160,
         Size = UDim2.fromOffset(580, 460),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = Enum.KeyCode.LeftControl,
         LoadingTitle = "Skibidi Defense Script",
-        LoadingSubtitle = "Loading v2.8..."
+        LoadingSubtitle = "Loading v3.0..."
     })
 
     if type(getgenv) == "function" then
@@ -2316,12 +2303,20 @@ local function main()
         local DelaySlider = MainTab:AddSlider("CrateDelay", {
             Title = "Delay between opens",
             Description = "Seconds (0.05 - 2)",
-            Default = 0.15,
+            Default = tonumber(Settings.CrateDelay) or 0.15,
             Min = 0.05,
             Max = 2,
             Rounding = 2,
-            Callback = function(v) Settings.CrateDelay = v end,
+            Callback = function(v) Settings.CrateDelay = tonumber(v) or 0.15 end,
         })
+
+        pcall(function()
+            if DelaySlider and type(DelaySlider.OnChanged) == "function" then
+                DelaySlider:OnChanged(function(v)
+                    Settings.CrateDelay = tonumber(v) or 0.15
+                end)
+            end
+        end)
 
         local CrateToggle
         CrateToggle = MainTab:AddToggle("CrateAutoOpen", {
@@ -2367,7 +2362,7 @@ local function main()
                             break
                         end
 
-                        task.wait(Settings.CrateDelay)
+                        task.wait(tonumber(Settings.CrateDelay) or 0.15)
                     end
 
                     if not CrateState.Running then
@@ -2831,12 +2826,17 @@ local function main()
 
     local autoSaveRunning = true
 
-    local AutoLoadTeleportEnabled = true
-    if typeof(getgenv) == "function" then
-        local env = getgenv()
-        if env.SkibidiAutoLoadTeleport ~= nil then
-            AutoLoadTeleportEnabled = env.SkibidiAutoLoadTeleport
+    -- Script Auto Load: читаем из файла (сохраняется между перезаходами)
+    local AUTO_LOAD_SCRIPT_FILE = "SkibidiConfigs/script_autoload.txt"
+    local AutoLoadTeleportEnabled = false
+    if isfile(AUTO_LOAD_SCRIPT_FILE) then
+        local ok, content = pcall(function() return readfile(AUTO_LOAD_SCRIPT_FILE) end)
+        if ok and content == "1" then
+            AutoLoadTeleportEnabled = true
         end
+    end
+    if typeof(getgenv) == "function" then
+        getgenv().SkibidiAutoLoadTeleport = AutoLoadTeleportEnabled
     end
 
     local function SetupAutoLoadTeleport()
@@ -2848,6 +2848,11 @@ local function main()
             task.wait(2)
             local env = getgenv and getgenv()
             if env and env.SkibidiAutoLoadTeleport == false then return end
+            local ok, content = pcall(function()
+                return isfile("SkibidiConfigs/script_autoload.txt")
+                    and readfile("SkibidiConfigs/script_autoload.txt")
+            end)
+            if ok and content == "0" then return end
             pcall(function()
                 loadstring(game:HttpGet(
                     "https://raw.githubusercontent.com/MrAdiviKPlayYT/sdkasjdskfjasd/refs/heads/main/sdsadas.lua"
@@ -2856,9 +2861,6 @@ local function main()
         ]])
     end
 
-    if typeof(getgenv) == "function" then
-        getgenv().SkibidiAutoLoadTeleport = AutoLoadTeleportEnabled
-    end
     if AutoLoadTeleportEnabled then
         SetupAutoLoadTeleport()
     end
@@ -2868,9 +2870,13 @@ local function main()
         Description = "Автоматически запускать скрипт после Rejoin/Teleport",
         Default = AutoLoadTeleportEnabled,
         Callback = function(v)
-            AutoLoadTeleportEnabled = v
+            AutoLoadTeleportEnabled = v == true
+            pcall(function()
+                if not isfolder("SkibidiConfigs") then makefolder("SkibidiConfigs") end
+                writefile(AUTO_LOAD_SCRIPT_FILE, v and "1" or "0")
+            end)
             if typeof(getgenv) == "function" then
-                getgenv().SkibidiAutoLoadTeleport = v
+                getgenv().SkibidiAutoLoadTeleport = v == true
             end
             if v then
                 SetupAutoLoadTeleport()
@@ -3240,11 +3246,11 @@ local function main()
 
     local UpdateTab = Window:AddTab({Title = "Update Log", Icon = "rbxassetid://15567843390" })
     UpdateTab:AddSection("Version")
-    UpdateTab:AddParagraph({Title = "Version", Content = "2.8" })
+    UpdateTab:AddParagraph({Title = "Version", Content = "3.0" })
     UpdateTab:AddSection("Update Date")
     UpdateTab:AddParagraph({Title = "Update Date", Content = "19.09.2026" })
     UpdateTab:AddSection("What's New")
-    UpdateTab:AddParagraph({Title = "What's New v2.8", Content = "Fixed AutoSave between rejoins\nFixed Macro name restore\nAdded Save Backup toggle\nAdded backup settings persistence" })
+    UpdateTab:AddParagraph({Title = "What's New v3.0", Content = "Removed autosavebackup system\nSimple Save: name from input or auto-backup1,2,3...\nAll defaults OFF for Auto Save / Auto Load\nFixed Crate Delay\nScript Auto Load saves between rejoins" })
 
     local MacroRecorderTab = Window:AddTab({Title = "Macro Recorder", Icon = "rbxassetid://120674109076896"})
     MacroRecorderTab:AddSection("Recording")
@@ -3388,24 +3394,11 @@ local function main()
         if not Settings.MacroAutoSaveEnabled then return false end
         if #Macro.Data == 0 then return false end
         local name = Macro.ResolveName()
-        if not name then
+        if not name or name == "" then
             name = Macro.GetNextBackupName()
         end
         local ok = Macro.WriteToFile(name)
         if ok then pcall(Macro.SaveSettings) end
-        return ok
-    end
-
-    function Macro.AutoSaveBackup()
-        if not Settings.MacroAutoSaveEnabled then return false end
-        if not Settings.MacroAutoSaveBackupEnabled then return false end
-        if #Macro.Data == 0 then return false end
-        local backupName = Macro.GetNextBackupName()
-        local ok = Macro.WriteToFile(backupName)
-        if ok then
-            Macro.SetStatus("Backup saved: " .. backupName)
-            pcall(Macro.SaveSettings)
-        end
         return ok
     end
 
@@ -3437,26 +3430,6 @@ local function main()
             notifyUser("Macro Recorder", "Saved: " .. finalName, 2)
         else
             notifyUser("Macro Recorder", "Failed to save.", 3)
-        end
-    end })
-
-    MacroRecorderTab:AddButton({ Title = "Save Backup (autosavebackupN)", Callback = function()
-        if Macro.Recording or Macro.Playing then
-            notifyUser("Macro Recorder", "Stop recording/playback first.", 2)
-            return
-        end
-        if #Macro.Data == 0 then
-            notifyUser("Macro Recorder", "Macro is empty.", 2)
-            return
-        end
-        local savedBackupFlag = Settings.MacroAutoSaveBackupEnabled
-        Settings.MacroAutoSaveBackupEnabled = true
-        local ok = Macro.AutoSaveBackup()
-        Settings.MacroAutoSaveBackupEnabled = savedBackupFlag
-        if ok then
-            notifyUser("Macro Recorder", "Backup created.", 2)
-        else
-            notifyUser("Macro Recorder", "Backup failed.", 3)
         end
     end })
 
@@ -3537,18 +3510,6 @@ local function main()
         Min = 1, Max = 30, Rounding = 1,
         Default = Settings.MacroAutoSaveInterval,
         Callback = function(v) Settings.MacroAutoSaveInterval = tonumber(v) or 3; Macro.SaveSettings(); saveMacroSettingsToCurrentConfig() end
-    })
-
-    macroAutoSaveBackupToggle = MacroRecorderTab:AddToggle("MacroAutoSaveBackupEnabled", {
-        Title = "Auto Save Backup",
-        Description = "Create autosavebackupN on recording stop",
-        Default = Settings.MacroAutoSaveBackupEnabled,
-        Callback = function(v)
-            Settings.MacroAutoSaveBackupEnabled = v == true
-            Macro.SaveSettings()
-            saveMacroSettingsToCurrentConfig()
-            notifyUser("Macro Recorder", v and "Backup ON" or "Backup OFF", 2)
-        end
     })
 
     MacroRecorderTab:AddSection("Keybind Settings")
@@ -3812,7 +3773,6 @@ local function main()
             MacroAutoStartDelay = Settings.MacroAutoStartDelay,
             MacroAutoSaveEnabled = Settings.MacroAutoSaveEnabled,
             MacroAutoSaveInterval = Settings.MacroAutoSaveInterval,
-            MacroAutoSaveBackupEnabled = Settings.MacroAutoSaveBackupEnabled,
             MacroSelectedName = Settings.MacroSelectedName,
             MacroBinds = {
                 Record = MacroBinds.Record.Name,
@@ -3885,7 +3845,6 @@ local function main()
         Settings.MacroAutoStartDelay = tonumber(data.MacroAutoStartDelay) or 2
         Settings.MacroAutoSaveEnabled = data.MacroAutoSaveEnabled or false
         Settings.MacroAutoSaveInterval = tonumber(data.MacroAutoSaveInterval) or 3
-        Settings.MacroAutoSaveBackupEnabled = data.MacroAutoSaveBackupEnabled ~= false
         Settings.MacroSelectedName = data.MacroSelectedName or ""
 
         if type(data.MacroBinds) == "table" then
@@ -3911,7 +3870,6 @@ local function main()
             if macroAutoStartDelaySlider then macroAutoStartDelaySlider:SetValue(Settings.MacroAutoStartDelay) end
             if macroAutoSaveToggle then macroAutoSaveToggle:SetValue(Settings.MacroAutoSaveEnabled) end
             if macroAutoSaveIntervalSlider then macroAutoSaveIntervalSlider:SetValue(Settings.MacroAutoSaveInterval) end
-            if macroAutoSaveBackupToggle then macroAutoSaveBackupToggle:SetValue(Settings.MacroAutoSaveBackupEnabled) end
             if macroDebugToggle then macroDebugToggle:SetValue(Settings.MacroDebugClicks) end
             if macroCompensateToggle then macroCompensateToggle:SetValue(Settings.MacroCompensateInset) end
         end)
@@ -4198,7 +4156,7 @@ local function main()
         end)
 
         ScriptInitializing = false
-        notifyUser("Skibidi Defense", "v2.8 loaded! (Fluent UI)", 3)
+        notifyUser("Skibidi Defense", "v3.0 loaded! (Fluent UI)", 3)
     end)
 
     task.spawn(function()
@@ -4208,7 +4166,7 @@ local function main()
         end
     end)
 
-    print("[Loader] Skibidi Defense v2.8 loaded successfully!")
+    print("[Loader] Skibidi Defense v3.0 loaded successfully!")
 
     pcall(function() Window:SelectTab(1) end)
 
