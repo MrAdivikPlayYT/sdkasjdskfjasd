@@ -1,14 +1,13 @@
 repeat task.wait() until game:IsLoaded()
 print("[Loader] Game loaded, starting script...")
 
--- Защита от повторного запуска
 if _G.SkibidiDefenseLoaded then
     print("[Loader] Script already loaded, skipping...")
     return
 end
 _G.SkibidiDefenseLoaded = true
 
-function decrypt(s)
+local function decrypt(s)
     local r=""
     for i=1,#s do
         r=r..string.char(string.byte(s,i)-3)
@@ -127,7 +126,7 @@ local currentConfig = "default"
 local ConfigApplying = false
 local ScriptInitializing = true
 
-function notifyUser(title, content, duration)
+local function notifyUser(title, content, duration)
     if ConfigApplying or ScriptInitializing then return end
     pcall(function()
         if Settings.NotificationsEnabled then
@@ -140,7 +139,7 @@ function notifyUser(title, content, duration)
     end)
 end
 
-function setButtonText(btn, text)
+local function setButtonText(btn, text)
     notifyUser("Info", text, 2)
 end
 
@@ -152,7 +151,7 @@ local originalBoosts = {}
 local createdSpecial = {}
 local createdBoostsList = {}
 
-function getValueAfterColon(text)
+local function getValueAfterColon(text)
     if not text or text == "" then return "N/A" end
     local colonPos = text:find(":")
     if colonPos then
@@ -163,13 +162,13 @@ function getValueAfterColon(text)
     return text
 end
 
-function toNumber(value)
+local function toNumber(value)
     if not value or value == "N/A" then return 0 end
     local num = tonumber(value:gsub("[^%d]", ""))
     return num or 0
 end
 
-function formatNumber(num)
+local function formatNumber(num)
     if num >= 1000000 then
         return string.format("%.1fM", num / 1000000)
     elseif num >= 1000 then
@@ -178,7 +177,7 @@ function formatNumber(num)
     return tostring(num)
 end
 
-function getGameResult()
+local function getGameResult()
     local player = Players.LocalPlayer
     if not player then return "Unknown" end
     local playerGui = player:FindFirstChild("PlayerGui")
@@ -200,7 +199,7 @@ function getGameResult()
     return "Unknown"
 end
 
-function collectMatchStats()
+local function collectMatchStats()
     local stats = {
         kills = "N/A", survived = "N/A", timeelapsed = "N/A",
         items = "N/A", clock = "N/A", credits = "N/A",
@@ -235,7 +234,7 @@ function collectMatchStats()
     return stats
 end
 
-function sendMatchWebhook(fieldsData)
+local function sendMatchWebhook(fieldsData)
     if not Settings.WebhookEnabled or Settings.WebhookURL == "" then return end
     if not Settings.WebhookMatchTracking then return end
     local timeNow = os.date("%H:%M:%S")
@@ -271,7 +270,7 @@ function sendMatchWebhook(fieldsData)
     end
 end
 
-function onGameEnded()
+local function onGameEnded()
     task.wait(1.5)
     local result = getGameResult()
     local stats = collectMatchStats()
@@ -312,7 +311,7 @@ function onGameEnded()
     sendMatchWebhook(fields)
 end
 
-function setupTracking()
+local function setupTracking()
     if endedConnection then
         endedConnection:Disconnect()
         endedConnection = nil
@@ -329,7 +328,7 @@ function setupTracking()
     end
 end
 
-function findAndTrackEndedBool()
+local function findAndTrackEndedBool()
     local replicatedStorage = game:GetService("ReplicatedStorage")
     for _, child in ipairs(replicatedStorage:GetChildren()) do
         if child:IsA("BoolValue") and string.lower(child.Name) == "ended" then
@@ -351,7 +350,7 @@ function findAndTrackEndedBool()
     end
 end
 
-function startMatchTracking()
+local function startMatchTracking()
     if matchTrackingActive then return end
     matchTrackingActive = true
     winStreak = 0
@@ -359,7 +358,7 @@ function startMatchTracking()
     task.spawn(findAndTrackEndedBool)
 end
 
-function stopMatchTracking()
+local function stopMatchTracking()
     matchTrackingActive = false
     if endedConnection then
         endedConnection:Disconnect()
@@ -367,7 +366,7 @@ function stopMatchTracking()
     end
 end
 
-function getTowerData()
+local function getTowerData()
     local scripted = workspace:FindFirstChild("Scripted")
     if not scripted then return nil end
     return scripted:FindFirstChild("TowerData")
@@ -375,7 +374,7 @@ end
 
 local boostTypes = {"DMG", "CASH", "COST", "HD", "RNG", "SKIP", "SPA"}
 
-function ensureAllBoosts(tower, special)
+local function ensureAllBoosts(tower, special)
     createdBoostsList[tower] = createdBoostsList[tower] or {}
     originalBoosts[tower] = originalBoosts[tower] or {}
     for _, boostName in ipairs(boostTypes) do
@@ -395,7 +394,7 @@ function ensureAllBoosts(tower, special)
     end
 end
 
-function saveOriginalBoosts()
+local function saveOriginalBoosts()
     originalBoosts = {}
     createdSpecial = {}
     createdBoostsList = {}
@@ -418,7 +417,7 @@ function saveOriginalBoosts()
     end
 end
 
-function applyBoost(boostType, value)
+local function applyBoost(boostType, value)
     local towerData = getTowerData()
     if not towerData then return end
     local count = 0
@@ -445,7 +444,7 @@ function applyBoost(boostType, value)
     notifyUser("Tower Boosts", boostType .. " = " .. tostring(value) .. " (" .. count .. " towers)", 2)
 end
 
-function applyBoostSafe(boostType, value)
+local function applyBoostSafe(boostType, value)
     if boostType == "DMG" then applyBoost("DMG", value)
     elseif boostType == "CASH" then applyBoost("CASH", math.floor(value))
     elseif boostType == "COST" then applyBoost("COST", math.floor(value))
@@ -456,7 +455,7 @@ function applyBoostSafe(boostType, value)
     end
 end
 
-function resetBoosts()
+local function resetBoosts()
     local towerData = getTowerData()
     if not towerData then return end
     for _, tower in ipairs(towerData:GetChildren()) do
@@ -493,7 +492,7 @@ task.spawn(function()
     saveOriginalBoosts()
 end)
 
-function setGameSpeed(speed)
+local function setGameSpeed(speed)
     pcall(function()
         local replicatedStorage = game:GetService("ReplicatedStorage")
         local gameFolder = replicatedStorage:FindFirstChild("Game")
@@ -529,7 +528,7 @@ local savedEffects = {}
 local savedPostEffects = {}
 local descendantConnection = nil
 
-function saveGameSettings()
+local function saveGameSettings()
     local Lighting = game:GetService("Lighting")
     local Terrain = workspace:FindFirstChildOfClass("Terrain")
     savedSettings = {
@@ -564,8 +563,8 @@ function saveGameSettings()
     end
 end
 
-function saveMaterial(obj) if not savedMaterials[obj] then savedMaterials[obj] = obj.Material end end
-function saveEffect(obj)
+local function saveMaterial(obj) if not savedMaterials[obj] then savedMaterials[obj] = obj.Material end end
+local function saveEffect(obj)
     if obj:IsA("ParticleEmitter") and not savedParticles[obj] then savedParticles[obj] = obj.Enabled
     elseif (obj:IsA("Trail") or obj:IsA("Beam")) and not savedEffects[obj] then savedEffects[obj] = obj.Enabled
     elseif (obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles")) and not savedEffects[obj] then savedEffects[obj] = obj.Enabled
@@ -573,7 +572,7 @@ function saveEffect(obj)
     end
 end
 
-function optimizeObject(obj)
+local function optimizeObject(obj)
     pcall(function()
         if obj:IsA("Part") or obj:IsA("MeshPart") or obj:IsA("UnionOperation") then
             saveMaterial(obj)
@@ -593,7 +592,7 @@ function optimizeObject(obj)
     end)
 end
 
-function restoreEverything()
+local function restoreEverything()
     pcall(function()
         for obj, material in pairs(savedMaterials) do if obj and obj.Parent then obj.Material = material end end
         for obj, enabled in pairs(savedParticles) do if obj and obj.Parent then obj.Enabled = enabled; if enabled and obj:IsA("ParticleEmitter") then obj.Rate = 10 end end end
@@ -603,13 +602,13 @@ function restoreEverything()
     end)
 end
 
-function restorePostEffects()
+local function restorePostEffects()
     local Lighting = game:GetService("Lighting")
     for v, enabled in pairs(savedPostEffects) do pcall(function() if v and v.Parent then v.Enabled = enabled end end) end
     savedPostEffects = {}
 end
 
-function enablePotatoGraphics()
+local function enablePotatoGraphics()
     if potatoGraphicsActive then return end
     potatoGraphicsActive = true
     pcall(function()
@@ -649,7 +648,7 @@ function enablePotatoGraphics()
     end)
 end
 
-function disablePotatoGraphics()
+local function disablePotatoGraphics()
     if not potatoGraphicsActive then return end
     potatoGraphicsActive = false
     pcall(function()
@@ -683,22 +682,20 @@ function disablePotatoGraphics()
     end)
 end
 
-function togglePotatoGraphics(enabled)
+local function togglePotatoGraphics(enabled)
     Settings.PotatoGraphics = enabled
     if enabled then enablePotatoGraphics() else disablePotatoGraphics() end
 end
 
-function showAllTowers()
+local function showAllTowers()
     local player = Players.LocalPlayer
     local playerGui = player:FindFirstChild("PlayerGui")
     if not playerGui then return end
     local main = playerGui:FindFirstChild("Main")
     if not main then return end
 
-    -- Сначала сами Grid-ы (не через GetDescendants всего GUI)
     for _, obj in ipairs(main:GetChildren()) do
         if obj:IsA("GuiObject") then
-            -- Grid может быть внутри Frame/ScrollingFrame
             local grids = { obj }
             if obj:IsA("GuiObject") then
                 for _, child in ipairs(obj:GetDescendants()) do
@@ -710,7 +707,6 @@ function showAllTowers()
 
             for _, grid in ipairs(grids) do
                 if grid.Name == "Grid" or grid == obj then
-                    -- Кнопки внутри Grid (только прямые дети — их немного)
                     for _, button in ipairs(grid:GetChildren()) do
                         if button:IsA("TextButton") or button:IsA("ImageButton") then
                             if originalVisibility[button] == nil then
@@ -731,7 +727,7 @@ local showAllTowersDescendantConnection = nil
 local showAllTowersPlayerGuiConnection = nil
 local lastShowAllCheck = 0
 
-function startShowAllTowers()
+local function startShowAllTowers()
     if showAllTowersConnection or showAllTowersDescendantConnection or showAllTowersPlayerGuiConnection then
         return
     end
@@ -739,11 +735,8 @@ function startShowAllTowers()
     local player = Players.LocalPlayer
     local playerGui = player and player:FindFirstChild("PlayerGui")
 
-    -- Apply immediately to everything that already exists.
     showAllTowers()
 
-    -- Tower buttons are often created asynchronously by the game.
-    -- Watch additions instead of waiting for a fixed polling interval.
     if playerGui then
         showAllTowersDescendantConnection = playerGui.DescendantAdded:Connect(function(obj)
             if not Settings.ShowAllTowers then return end
@@ -763,8 +756,6 @@ function startShowAllTowers()
         end)
     end
 
-    -- Keep a lightweight fallback for buttons whose Visible property is
-    -- changed after creation by the game's own UI code.
     showAllTowersConnection = RunService.Heartbeat:Connect(function()
         if not Settings.ShowAllTowers then return end
         local now = tick()
@@ -774,7 +765,7 @@ function startShowAllTowers()
     end)
 end
 
-function stopShowAllTowers()
+local function stopShowAllTowers()
     if showAllTowersConnection then
         showAllTowersConnection:Disconnect()
         showAllTowersConnection = nil
@@ -790,7 +781,7 @@ function stopShowAllTowers()
 end
 
 local blackMarketConnection = nil
-function showBlackMarket()
+local function showBlackMarket()
     pcall(function()
         local player = Players.LocalPlayer
         local pg = player:FindFirstChild("PlayerGui")
@@ -803,7 +794,7 @@ function showBlackMarket()
     end)
 end
 
-function startBlackMarket()
+local function startBlackMarket()
     if blackMarketConnection then return end
     showBlackMarket()
     blackMarketConnection = RunService.Stepped:Connect(function()
@@ -811,7 +802,7 @@ function startBlackMarket()
     end)
 end
 
-function stopBlackMarket()
+local function stopBlackMarket()
     if blackMarketConnection then blackMarketConnection:Disconnect(); blackMarketConnection = nil end
     pcall(function()
         local player = Players.LocalPlayer
@@ -829,26 +820,26 @@ local walkRunning = false
 local walkThread = nil
 local walkKeys = {}
 
-function releaseWalkKeys()
+local function releaseWalkKeys()
     for k in pairs(walkKeys) do
         pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[k], false, nil) end)
     end
     walkKeys = {}
 end
 
-function pressWalkKey(k)
+local function pressWalkKey(k)
     if walkKeys[k] then return end
     walkKeys[k] = true
     pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[k], false, nil) end)
 end
 
-function releaseWalkKey(k)
+local function releaseWalkKey(k)
     if not walkKeys[k] then return end
     walkKeys[k] = nil
     pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[k], false, nil) end)
 end
 
-function walkJump()
+local function walkJump()
     pcall(function()
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, nil)
         task.wait(0.05 + math.random() * 0.1)
@@ -857,16 +848,16 @@ function walkJump()
 end
 
 local walkDirs = {{"W"}, {"S"}, {"A"}, {"D"}, {"W","D"}, {"W","A"}, {"S","D"}, {"S","A"}}
-function randWalkDir() return walkDirs[math.random(1, #walkDirs)] end
+local function randWalkDir() return walkDirs[math.random(1, #walkDirs)] end
 
-function hasMacroMode(mode)
+local function hasMacroMode(mode)
     for _, m in ipairs(Settings.MacroModes) do
         if m == mode then return true end
     end
     return false
 end
 
-function walkLoop()
+local function walkLoop()
     while walkRunning do
         if not hasMacroMode("Walking") then
             task.wait(1)
@@ -897,14 +888,14 @@ function walkLoop()
     releaseWalkKeys()
 end
 
-function startWalkMacro()
+local function startWalkMacro()
     if walkRunning then return end
     walkRunning = true
     walkThread = task.spawn(walkLoop)
     notifyUser("Walking Macro", "Started (WASD + Jump)", 2)
 end
 
-function stopWalkMacro()
+local function stopWalkMacro()
     if not walkRunning then return end
     walkRunning = false
     if walkThread then task.cancel(walkThread); walkThread = nil end
@@ -926,12 +917,12 @@ local macroDebugToggle, macroCompensateToggle
 local configAutoLoadToggle, configAutoSaveToggle
 
 local MacroBinds = {
-    Record = Enum.KeyCode.LeftBracket, -- Record / Stop Record
-    Play = Enum.KeyCode.BackSlash,     -- Play / Stop Play
+    Record = Enum.KeyCode.LeftBracket,
+    Play = Enum.KeyCode.BackSlash,
     Save = Enum.KeyCode.F6,
 }
 
-function MacroBindName(key)
+local function MacroBindName(key)
     return key and key.Name or "Unknown"
 end
 
@@ -1065,8 +1056,6 @@ do
         if not Macro.Recording then return end
         local now = os.clock() - Macro.RecordStart
         local sig = EventSignature(data)
-        -- Mouse clicks are atomic: never suppress two legitimate clicks
-        -- just because they happen at the same pixel in quick succession.
         if data.Type ~= "Mouse" then
             if sig == Macro.LastEventSig and (now - Macro.LastEventTime) < DuplicateEventWindow then return end
             Macro.LastEventSig = sig
@@ -1110,6 +1099,12 @@ do
         Macro.HeldKeys.D = false
         Macro.SetStatus("Recording stopped (" .. #Macro.Data .. " events)")
         notifyUser("Macro Recorder", "Recording stopped • Events: " .. #Macro.Data, 3)
+
+        if Settings.MacroAutoSaveEnabled and #Macro.Data > 0 and type(Macro.AutoSaveBackup) == "function" then
+            task.spawn(function()
+                pcall(Macro.AutoSaveBackup)
+            end)
+        end
     end
 
     function Macro.ToggleRecording()
@@ -1150,8 +1145,6 @@ do
         end
     end
 
-    -- Working click engine ported from Macro(5).lua.
-    -- GUI buttons are handled BEFORE 3D ClickDetectors.
     local SearchRadius = 24
     local SearchStep = 1
     local MaxPierceIterations = 40
@@ -1300,8 +1293,6 @@ do
         end)
         if not ok or not guiObjects then return false end
 
-        -- GetGuiObjectsAtPosition is already ordered by GUI hit priority.
-        -- Use the first active visible GuiButton at the exact recorded pixel.
         for _, obj in ipairs(guiObjects) do
             if obj:IsA("GuiButton") and obj.Visible and obj.Active then
                 if type(firesignal) == "function" then
@@ -1317,7 +1308,6 @@ do
                     if fired then return true end
                 end
 
-                -- If signals are unavailable, send one complete physical click.
                 pcall(function() VirtualInputManager:SendMouseMoveEvent(x, y, game) end)
                 RunService.Heartbeat:Wait()
                 pcall(function() VirtualInputManager:SendMouseButtonEvent(x, y, isRight and 1 or 0, true, game, 0) end)
@@ -1327,8 +1317,6 @@ do
             end
         end
 
-        -- Small 1-pixel search only for UI scaling/rounding differences.
-        -- This is intentionally much tighter than the 3D detector search.
         for r = 1, 12 do
             for dx = -r, r do
                 for _, dy in ipairs({-r, r}) do
@@ -1381,8 +1369,6 @@ do
         return false
     end
 
-    -- Zoom-independent 3D target helpers. Screen coordinates remain exact for GUI,
-    -- while 3D clicks remember the part that was actually under the cursor.
     local function GetInstanceByFullName(fullName)
         if type(fullName) ~= "string" or fullName == "" then return nil end
         local current = game
@@ -1418,11 +1404,6 @@ do
         }
     end
 
-    -- TinyTask-style mouse playback:
-    -- use the EXACT recorded screen pixel and generate one complete click
-    -- (move -> down -> up). The recorder stores only one mouse event per click.
-    -- Pure 2D TinyTask-style playback.
-    -- Camera, zoom, raycasts and GUI hit-tests are never consulted.
     local function SendRecordedMouse(Action)
         if Action.State ~= "Began" then return end
         local x, y = tonumber(Action.X), tonumber(Action.Y)
@@ -1610,8 +1591,6 @@ do
             Macro.Data = result
             Macro.UpdateCount()
             Macro.SetStatus("Loaded \"" .. name .. "\" (" .. #Macro.Data .. " events).")
-            if not silent then
-            end
             return true
         else
             warn("[MACRO] Failed to load macro:", result)
@@ -1641,7 +1620,6 @@ do
         return true
     end
 
-    -- FIX 1: Macro.RefreshList placeholder so SaveByBind doesn't error
     Macro.RefreshList = nil
 
     function Macro.SaveByBind()
@@ -1665,7 +1643,6 @@ do
         if ok then
             Macro.SelectedName = name
             Macro.RememberLast(name)
-            -- FIX 1: properly call RefreshList if it exists
             if Macro.RefreshList then
                 task.defer(function()
                     pcall(Macro.RefreshList)
@@ -1675,10 +1652,6 @@ do
         return ok
     end
 
-    -- When Camera Lock is enabled together with Walking (or Shiking + Walking),
-    -- the movement system is generated by the bypass macro itself. Do not record
-    -- WASD/Space from the physical keyboard in that mode, otherwise playback
-    -- would contain duplicate walking/jump events.
     local function ShouldIgnoreMovementRecording(keyCode)
         if not Settings.AntiMacro then
             return false
@@ -1710,8 +1683,6 @@ do
         if inputEndedConn then inputEndedConn:Disconnect() end
 
         inputBeganConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-            -- Проверяем все текущие бинды ПЕРВЫМ делом, до записи
-            -- Это работает даже если бинды были изменены через SetBind
             local function isBindKey(kc)
                 for _, bind in pairs(MacroBinds) do
                     if bind == kc then return true end
@@ -1746,18 +1717,14 @@ do
                     Macro.SaveByBind()
                     return
                 end
-                -- неизвестный бинд — всё равно не пишем в макрос
                 return
             end
 
             if not Macro.Recording then return end
 
-            -- Клавиатура: не пишем если gameProcessed
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 if gameProcessed then return end
 
-                -- Camera Lock + Walking owns movement input, so don't put
-                -- physical WASD/jump into the recorded macro.
                 if ShouldIgnoreMovementRecording(input.KeyCode) then
                     return
                 end
@@ -1769,12 +1736,7 @@ do
                 elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = true end
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2 then
-                -- Record game GUI clicks even when gameProcessed=true, but never record this macro window itself.
                 if not IsClickOnOwnUI(input.Position.X, input.Position.Y) then
-                    -- TinyTask-style: record the REAL 2D cursor position only.
-                    -- Do not raycast, do not resolve a 3D target, and do not adjust
-                    -- the point according to the camera. The exact cursor pixel is
-                    -- the only mouse data that is recorded.
                     local mousePos = UserInputService:GetMouseLocation()
                     local x, y = mousePos.X, mousePos.Y
                     AddEvent({
@@ -1791,7 +1753,6 @@ do
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 if gameProcessed then return end
 
-                -- Same filter for key release events.
                 if ShouldIgnoreMovementRecording(input.KeyCode) then
                     return
                 end
@@ -1803,7 +1764,6 @@ do
                 elseif input.KeyCode == Enum.KeyCode.D then Macro.HeldKeys.D = false end
             elseif input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.MouseButton2 then
-                -- Mouse is atomic: one physical click = one recorded event.
                 return
             end
         end)
@@ -1861,7 +1821,7 @@ do
                 Loop = Settings.MacroLoop,
                 MacroBinds = {
                     Record = MacroBindName(MacroBinds.Record),
-                                        Play = MacroBindName(MacroBinds.Play),
+                    Play = MacroBindName(MacroBinds.Play),
                     Save = MacroBindName(MacroBinds.Save),
                 },
                 AutoSaveEnabled = Settings.MacroAutoSaveEnabled or false,
@@ -1882,7 +1842,6 @@ do
         if data.CompensateInset ~= nil then Settings.MacroCompensateInset = data.CompensateInset end
         if data.DebugClicks ~= nil then Settings.MacroDebugClicks = data.DebugClicks end
         if data.Loop ~= nil then Settings.MacroLoop = data.Loop end
-        -- FIX 2: was "Settings.MacroAutoSaveEnabled = false" (wrong) and missing end
         if data.AutoSaveEnabled ~= nil then Settings.MacroAutoSaveEnabled = data.AutoSaveEnabled end
         if data.AutoSaveInterval ~= nil then Settings.MacroAutoSaveInterval = tonumber(data.AutoSaveInterval) or 3 end
         if type(data.MacroBinds) == "table" then
@@ -1896,7 +1855,6 @@ do
     Macro.LoadSettings()
 end
 
--- ИНИЦИАЛИЗАЦИЯ
 Macro.SetupInput()
 Macro.StartMovement()
 Macro.SetStatus("Ready.")
@@ -2389,7 +2347,7 @@ local Window = Fluent:CreateWindow({
     SubTitle = "v2.6",
     TabWidth = 160,
     Size = UDim2.fromOffset(580, 460),
-    Acrylic = false,
+    Acrylic = true,
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftControl,
     LoadingTitle = "Skibidi Defense Script",
@@ -2424,19 +2382,19 @@ RunService.RenderStepped:Connect(function()
     if tick() - lastUpdate >= 1 then fps = frames; frames = 0; lastUpdate = tick() end
 end)
 
-function getPingNumber()
+local function getPingNumber()
     local str = Stats.Network.ServerStatsItem["Data Ping"]:GetValueString()
     local num = tonumber(string.match(str, "%d+"))
     return math.floor(num or 0)
 end
 
-function getPingText() return tostring(getPingNumber()) end
+local function getPingText() return tostring(getPingNumber()) end
 
 local cachedServerInfo = nil
 local cachedExecutor = nil
 local cachedExecutorVersion = nil
 
-function getExecutorInfo()
+local function getExecutorInfo()
     if cachedExecutor then return cachedExecutor, cachedExecutorVersion end
     local name, version = "Unknown", ""
     pcall(function()
@@ -2456,7 +2414,7 @@ function getExecutorInfo()
     return name, version
 end
 
-function getServerInfo()
+local function getServerInfo()
     if cachedServerInfo then return cachedServerInfo end
     local info = "Unknown"
     pcall(function()
@@ -2472,7 +2430,7 @@ function getServerInfo()
     return info
 end
 
-function formatTime(sec)
+local function formatTime(sec)
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
     local s = math.floor(sec % 60)
@@ -2499,10 +2457,7 @@ end)
 
 MainTab:AddSection("Lobby")
 
--- ═══════════════════════════════════════════
--- SHOW ALL TOWERS
--- ═══════════════════════════════════════════
-function SetupShowAllTowers()
+local function SetupShowAllTowers()
     local Toggle_ShowAllTowers = MainTab:AddToggle("Toggle_ShowAllTowers", {
         Title = "Show All Towers",
         Default = Settings.ShowAllTowers,
@@ -2520,15 +2475,13 @@ function SetupShowAllTowers()
 end
 SetupShowAllTowers()
 
--- ═══════════════════════════════════════════
-
-function SetupAutoCrates()
+local function SetupAutoCrates()
     local RS_Crates = game:GetService("ReplicatedStorage")
 
     local CrateOpenTypes = {
-        [1] = "Single (1)",
-        [2] = "Medium (10)",
-        [3] = "Mass (25)",
+        [1] = "Одиночное (1)",
+        [2] = "Среднее (10)",
+        [3] = "Массовое (25)",
     }
 
     local CrateRewards = {
@@ -2556,7 +2509,6 @@ function SetupAutoCrates()
         Counter  = 0,
     }
 
-    -- Lazy resolver: не блокирует UI, ищет ремоуты только при запуске цикла.
     local function GetRemotes()
         local ng = RS_Crates:FindFirstChild("NotGambling")
         local op = ng and ng:FindFirstChild("Opening")
@@ -2576,7 +2528,6 @@ function SetupAutoCrates()
         for k, name in pairs(CrateOpenTypes) do
             if name == v then State.OpenType = k; break end
         end
-
     end)
 
     local RewardDD = MainTab:AddDropdown("CrateReward", {
@@ -2700,7 +2651,7 @@ local Toggle_BlackMarket = MainTab:AddToggle("BlackMarketToggle", {
     end
 })
 
-function getHRP()
+local function getHRP()
     local c = Players.LocalPlayer.Character
     return c and c:FindFirstChild("HumanoidRootPart")
 end
@@ -2710,7 +2661,7 @@ local lockedCF = nil
 local savedCamPos = nil
 local savedCamText = "(None)"
 
-function getShakeOffset()
+local function getShakeOffset()
     local offsets = {0.03, 0.05, 0.08, 0.1, 0.12}
     local x = offsets[math.random(1,#offsets)]
     local y = offsets[math.random(1,#offsets)]
@@ -2719,7 +2670,7 @@ function getShakeOffset()
     return x, y
 end
 
-function disableAntiMacroScripts()
+local function disableAntiMacroScripts()
     local player = Players.LocalPlayer
     pcall(function()
         local char = player.Character or player.CharacterAdded:Wait()
@@ -2736,7 +2687,7 @@ function disableAntiMacroScripts()
     end)
 end
 
-function startAntiMacro()
+local function startAntiMacro()
     if camConn then return end
     local cam = workspace.CurrentCamera
     if not cam then return end
@@ -2755,7 +2706,7 @@ function startAntiMacro()
     end)
 end
 
-function stopAntiMacro()
+local function stopAntiMacro()
     if camConn then camConn:Disconnect(); camConn = nil end
     local cam = workspace.CurrentCamera
     if cam then cam.CameraType = Enum.CameraType.Custom end
@@ -2930,19 +2881,19 @@ OtherTab:AddSection("Utilities")
 
 local originalHoldDurations = {}
 
-function saveOriginalHoldDuration(prompt)
+local function saveOriginalHoldDuration(prompt)
     if originalHoldDurations[prompt] == nil then originalHoldDurations[prompt] = prompt.HoldDuration end
 end
-function setInstantProxMount(prompt)
+local function setInstantProxMount(prompt)
     saveOriginalHoldDuration(prompt)
     pcall(function() prompt.HoldDuration = 0 end)
 end
-function restoreOriginalHoldDuration(prompt)
+local function restoreOriginalHoldDuration(prompt)
     if originalHoldDurations[prompt] ~= nil then
         pcall(function() prompt.HoldDuration = originalHoldDurations[prompt] end)
     end
 end
-function applyInstantProxMount(action)
+local function applyInstantProxMount(action)
     for _, prompt in ipairs(workspace:GetDescendants()) do
         if prompt:IsA("ProximityPrompt") then
             if action == "set" then setInstantProxMount(prompt)
@@ -2966,7 +2917,7 @@ task.spawn(function()
 end)
 
 local antiAFKEnabled = Settings.AntiAFK
-function startAntiAFK()
+local function startAntiAFK()
     if antiAFKEnabled then return end
     antiAFKEnabled = true
     Settings.AntiAFK = true
@@ -2989,7 +2940,7 @@ local Toggle_InstantProxMount = OtherTab:AddToggle("Toggle_InstantProxMount", {
 })
 
 local dexLoaded = false
-function loadDex()
+local function loadDex()
     if dexLoaded then return end
     dexLoaded = true
     task.spawn(xpcall, assert(loadstring(game:HttpGet('https://raw.githubusercontent.com/Diffone7/r/refs/heads/main/tsb/dex')), warn))
@@ -3010,7 +2961,7 @@ end })
 local serverHopActive = false
 local serverHopConnection = nil
 
-function destroyServerHopUI()
+local function destroyServerHopUI()
     pcall(function()
         local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
         if playerGui then
@@ -3043,7 +2994,7 @@ function destroyServerHopUI()
     end)
 end
 
-function loadServerHopUI()
+local function loadServerHopUI()
     if serverHopActive then
         destroyServerHopUI()
         serverHopActive = false
@@ -3073,7 +3024,7 @@ local infCamEnabled = false
 local oldMinZoom = nil
 local oldMaxZoom = nil
 
-function toggleInfCamera(v)
+local function toggleInfCamera(v)
     local player = Players.LocalPlayer
     if v then
         oldMinZoom = player.CameraMinZoomDistance
@@ -3129,23 +3080,23 @@ if typeof(getgenv) == "function" then
     end
 end
 
-function SetupAutoLoadTeleport()
-    if typeof(getgenv) == "function" and getgenv().SkibidiAutoLoadTeleport == false then
-        return
+local AutoLoadTeleportEnabled = true
+if typeof(getgenv) == "function" then
+    local env = getgenv()
+    if env.SkibidiAutoLoadTeleport ~= nil then
+        AutoLoadTeleportEnabled = env.SkibidiAutoLoadTeleport
     end
+end
 
+local function SetupAutoLoadTeleport()
     if typeof(queue_on_teleport) ~= "function" then
         warn("queue_on_teleport не найден")
         return
     end
-
     queue_on_teleport([[
         task.wait(2)
-
-        if typeof(getgenv) == "function" and getgenv().SkibidiAutoLoadTeleport == false then
-            return
-        end
-
+        local env = getgenv and getgenv()
+        if env and env.SkibidiAutoLoadTeleport == false then return end
         pcall(function()
             loadstring(game:HttpGet(
                 "https://raw.githubusercontent.com/MrAdiviKPlayYT/sdkasjdskfjasd/refs/heads/main/sdsadas.lua"
@@ -3154,13 +3105,11 @@ function SetupAutoLoadTeleport()
     ]])
 end
 
-
-
 if typeof(getgenv) == "function" then
     getgenv().SkibidiAutoLoadTeleport = AutoLoadTeleportEnabled
 end
 if AutoLoadTeleportEnabled then
-
+    SetupAutoLoadTeleport()
 end
 
 OtherTab:AddToggle("ScriptAutoLoad", {
@@ -3169,16 +3118,13 @@ OtherTab:AddToggle("ScriptAutoLoad", {
     Default = AutoLoadTeleportEnabled,
     Callback = function(v)
         AutoLoadTeleportEnabled = v
-
         if typeof(getgenv) == "function" then
             getgenv().SkibidiAutoLoadTeleport = v
         end
-
         if v then
             SetupAutoLoadTeleport()
             notifyUser("Script Auto Load", "Enabled", 2)
         else
-            -- Уже поставленная очередь проверит этот флаг и не запустит скрипт.
             notifyUser("Script Auto Load", "Disabled", 2)
         end
     end
@@ -3488,7 +3434,7 @@ WebhookTab:AddToggle("ShowLogInWebhook", {
 
 WebhookTab:AddSection("Display Fields")
 local matchFieldsText = WebhookTab:AddParagraph({Title = "Selected Fields", Content = table.concat(Settings.WebhookMatchFields, ", ") })
-function updateMatchFieldsText()
+local function updateMatchFieldsText()
     pcall(function()
         matchFieldsText:SetDesc(#Settings.WebhookMatchFields > 0 and table.concat(Settings.WebhookMatchFields, ", ") or "None")
     end)
@@ -3543,13 +3489,19 @@ end })
 
 local UpdateTab = Window:AddTab({Title = "Update Log", Icon = "rbxassetid://15567843390" })
 UpdateTab:AddSection("Version")
-UpdateTab:AddParagraph({Title = "Version", Content = "2.6" })
+UpdateTab:AddParagraph({Title = "Version", Content = "2.7" })
 UpdateTab:AddSection("Update Date")
 UpdateTab:AddParagraph({Title = "Update Date", Content = "16.08.2026" })
 UpdateTab:AddSection("What's New")
-UpdateTab:AddParagraph({Title = "What's New v2.6", Content = "Added Visual Effects:\nAmbient Light, Atmosphere, Bloom,\nColor Correction, Sun Rays, FOV\nPlayer Aura, Character Trail,\nJump / Land Circle\nFixed Macros (Camera Lock + Walking)" })
+UpdateTab:AddParagraph({Title = "What's New v2.7", Content = "Added AutoSave Backup:\n- autosavebackup1, autosavebackup2, ...\n- Создаётся один раз при остановке записи\n- Работает только если Auto Save включён" })
 UpdateTab:AddSection("Changelog")
 UpdateTab:AddParagraph({Title = "Changelog", Content = [[
+v2.7 (16.08.2026)
+- Added AutoSave Backup (autosavebackup1, 2, 3...)
+- Fixed AutoSave not updating SelectedName
+- Fixed AutoSave not calling RememberLast
+- AutoSaveBackup creates single backup on recording stop
+
 v2.6 (16.08.2026)
 - Added Visual Effects: Ambient Light, Atmosphere, Bloom, Color Correction, Sun Rays, FOV
 - Added Player Aura (particle rings around player)
@@ -3604,7 +3556,8 @@ MacroRecorderTab:AddButton({ Title = "Record / Stop Record", Description = "[", 
 end })
 MacroRecorderTab:AddButton({ Title = "Play / Stop Play", Description = "\\", Callback = function()
     if Macro.Playing then
-        Macro.StopPlayback()
+        Macro.Playing = false
+        Macro.SetStatus("Playback stopped.")
     else
         Macro.Play()
     end
@@ -3650,13 +3603,36 @@ function RefreshMacroDropdown()
     end)
 end
 
--- FIX 1: assign RefreshList so SaveByBind can call it
 Macro.RefreshList = RefreshMacroDropdown
 
 MacroRecorderTab:AddButton({ Title = "Save", Callback = function()
-    Macro.SaveByBind()
+    local name = macroNameInput
+    if (not name or name == "") and Macro.SelectedName then
+        name = Macro.SelectedName
+    end
+    if not name or name == "" then
+        notifyUser("Macro Recorder", "Enter a macro name first.", 2)
+        return
+    end
+    if Macro.Recording or Macro.Playing then
+        Macro.StopRecording()
+        task.wait(0.1)
+    end
+    if #Macro.Data == 0 then
+        notifyUser("Macro Recorder", "Macro is empty.", 2)
+        return
+    end
+    Macro.SelectedName = name
+    Macro.RememberLast(name)
+    if Macro.SaveNamed(name) then
+        notifyUser("Macro Recorder", "Saved: " .. name, 2)
+        task.defer(function() pcall(RefreshMacroDropdown) end)
+    end
 end })
 
+-- ===========================================================
+-- MACRO AUTO SAVE + BACKUP
+-- ===========================================================
 function Macro.AutoSave()
     if not Settings.MacroAutoSaveEnabled then return false end
     local name = Macro.SelectedName
@@ -3687,33 +3663,79 @@ function Macro.AutoSave()
     end)
     if ok then
         Macro.SelectedName = name
+        Macro.RememberLast(name)
         task.defer(function() pcall(RefreshMacroDropdown) end)
     end
     return ok
 end
 
-if not Macro._AutoSaveLoop then
-    Macro._AutoSaveLoop = task.spawn(function()
-        while true do
-            task.wait(math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3))
-            if Settings.MacroAutoSaveEnabled and Macro.Recording and #Macro.Data > 0 then
-                pcall(Macro.AutoSave)
+function Macro.GetNextBackupName()
+    local folder = "MacroRecorderData"
+    if not isfolder(folder) then makefolder(folder) end
+    local index = 1
+    while isfile(folder .. "/autosavebackup" .. index .. ".json") do
+        index = index + 1
+        if index > 9999 then break end
+    end
+    return "autosavebackup" .. index
+end
+
+function Macro.AutoSaveBackup()
+    if not Settings.MacroAutoSaveEnabled then return false end
+    if #Macro.Data == 0 then return false end
+
+    local backupName = Macro.GetNextBackupName()
+    local ok = pcall(function()
+        local folder = "MacroRecorderData"
+        if not isfolder(folder) then makefolder(folder) end
+        local out = {}
+        for _, action in ipairs(Macro.Data) do
+            local entry = {
+                Type = action.Type,
+                State = action.State,
+                Time = tonumber(action.Time) or 0,
+                X = action.X,
+                Y = action.Y,
+            }
+            if typeof(action.Key) == "EnumItem" then
+                entry.Key = action.Key.Name
+            elseif action.Key ~= nil then
+                entry.Key = action.Key
             end
+            table.insert(out, entry)
         end
+        writefile(folder .. "/" .. backupName .. ".json", HttpService:JSONEncode(out))
     end)
+    if ok then
+        Macro.SetStatus("Backup saved: " .. backupName)
+        task.defer(function() pcall(RefreshMacroDropdown) end)
+    end
+    return ok
 end
 
 MacroRecorderTab:AddButton({ Title = "Load", Callback = function()
     if Macro.Recording or Macro.Playing then return end
-    Macro.LoadNamed(Macro.SelectedName, false)
-end })
-
-MacroRecorderTab:AddButton({ Title = "Remove", Callback = function()
-    if not Macro.SelectedName or Macro.SelectedName == "" then
+    local name = Macro.SelectedName
+    if (not name or name == "") and macroNameInput ~= "" then
+        name = macroNameInput
+    end
+    if not name or name == "" then
         notifyUser("Macro Recorder", "No macro selected.", 2)
         return
     end
-    Macro.RemoveNamed(Macro.SelectedName)
+    Macro.LoadNamed(name, false)
+end })
+
+MacroRecorderTab:AddButton({ Title = "Remove", Callback = function()
+    local name = Macro.SelectedName
+    if (not name or name == "") and macroNameInput ~= "" then
+        name = macroNameInput
+    end
+    if not name or name == "" then
+        notifyUser("Macro Recorder", "No macro selected.", 2)
+        return
+    end
+    Macro.RemoveNamed(name)
     Macro.SelectedName = nil
     Macro.RememberLast(nil)
     RefreshMacroDropdown()
@@ -3721,8 +3743,6 @@ end })
 
 MacroRecorderTab:AddSection("Settings")
 
--- Macro Recorder settings are part of the selected config.
--- When Auto Save is enabled, changes are written immediately.
 function saveMacroSettingsToCurrentConfig()
     if ConfigApplying then return end
     if Settings.AutoSaveEnabled and currentConfig and currentConfig ~= "default" then
@@ -3897,9 +3917,6 @@ local CONFIG_FOLDER = "SkibidiConfigs"
 local LAST_CONFIG_FILE = CONFIG_FOLDER.."/last.txt"
 local AUTOLOAD_STATE_FILE = CONFIG_FOLDER.."/autoload.txt"
 if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
-
--- Config switches are persistent and are stored in the selected config.
--- Keep the defaults declared at the top of the script; do not overwrite them here.
 
 local function loadDefault()
     Settings.ShowAllTowers = false
@@ -4293,8 +4310,6 @@ function AutoSave()
 end
 
 function AutoLoad()
-    -- Read the global Auto Load switch BEFORE trying to load the last config.
-    -- This allows Auto Load to stay disabled after a full rejoin/restart.
     if isfile(AUTOLOAD_STATE_FILE) then
         local state = readfile(AUTOLOAD_STATE_FILE)
         if state == "0" then
@@ -4391,8 +4406,6 @@ configAutoLoadToggle = ConfigTab:AddToggle("AutoLoad", {
     Default = Settings.AutoLoadEnabled,
     Callback = function(v)
         Settings.AutoLoadEnabled = v
-        -- This preference must be saved separately, because the config
-        -- itself cannot be loaded until Auto Load has already been checked.
         pcall(function() writefile(AUTOLOAD_STATE_FILE, v and "1" or "0") end)
         if not ConfigApplying and currentConfig ~= "default" then
             pcall(function() saveConfig(currentConfig) end)
@@ -4411,7 +4424,6 @@ configAutoSaveToggle = ConfigTab:AddToggle("AutoSave", {
 })
 
 task.spawn(function()
-    -- Load the selected config immediately after the UI controls exist.
     AutoLoad()
     updateSelected()
     refreshDropdown()
@@ -4422,9 +4434,8 @@ task.spawn(function()
         end
     end)
 
-    -- Initialization is finished: notifications are enabled from this point.
     ScriptInitializing = false
-    notifyUser("Skibidi Defense", "v2.6 loaded! (Fluent UI)", 3)
+    notifyUser("Skibidi Defense", "v2.7 loaded! (Fluent UI)", 3)
 end)
 
 task.spawn(function()
@@ -4434,7 +4445,7 @@ task.spawn(function()
     end
 end)
 
-print("[Loader] Skibidi Defense v2.6 loaded successfully!")
+print("[Loader] Skibidi Defense v2.7 loaded successfully!")
 
 pcall(function() Window:SelectTab(1) end)
 
@@ -4470,4 +4481,3 @@ pcall(function()
         notifyUser("Macro Recorder", "fireclickdetector not available. ClickDetector clicks won't work.", 6)
     end
 end)
-
