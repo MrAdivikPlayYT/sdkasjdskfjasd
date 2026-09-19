@@ -3476,7 +3476,7 @@ local function main()
 
     macroAutoLoadDelaySlider = MacroRecorderTab:AddSlider("MacroAutoLoadDelay", {
         Title = "Auto-load delay (s)",
-        Min = 0, Max = 15, Rounding = 1,
+        Min = 0, Max = 60, Rounding = 1,
         Default = Settings.MacroAutoLoadDelay,
         Callback = function(v) Settings.MacroAutoLoadDelay = tonumber(v) or 0; Macro.SaveSettings(); saveMacroSettingsToCurrentConfig() end
     })
@@ -3489,7 +3489,7 @@ local function main()
 
     macroAutoStartDelaySlider = MacroRecorderTab:AddSlider("MacroAutoStartDelay", {
         Title = "Auto-start delay (s)",
-        Min = 0, Max = 15, Rounding = 1,
+        Min = 0, Max = 60, Rounding = 1,
         Default = Settings.MacroAutoStartDelay,
         Callback = function(v) Settings.MacroAutoStartDelay = tonumber(v) or 0; Macro.SaveSettings(); saveMacroSettingsToCurrentConfig() end
     })
@@ -4170,7 +4170,36 @@ local function main()
 
     pcall(function() Window:SelectTab(1) end)
 
+    -- Macro Auto Save: независимый таймер, не зависит от Auto Load / Auto Start
     task.spawn(function()
+        while true do
+            if Settings.MacroAutoSaveEnabled and Macro.Recording and #Macro.Data > 0 then
+                local interval = math.max(1, tonumber(Settings.MacroAutoSaveInterval) or 3)
+                local startedAt = os.clock()
+                while Settings.MacroAutoSaveEnabled and Macro.Recording and #Macro.Data > 0 do
+                    if os.clock() - startedAt >= interval then
+                        break
+                    end
+                    task.wait(0.1)
+                end
+
+                if Settings.MacroAutoSaveEnabled and Macro.Recording and #Macro.Data > 0 then
+                    pcall(function()
+                        Macro.AutoSave()
+                    end)
+                end
+            else
+                task.wait(0.25)
+            end
+        end
+    end)
+
+    task.spawn(function()
+        -- Ждём завершения загрузки конфига, чтобы delay брался уже из актуального конфига.
+        while ScriptInitializing do
+            task.wait(0.05)
+        end
+
         local rememberedName = Settings.MacroSelectedName
         if not rememberedName or rememberedName == "" then
             pcall(function()
@@ -4200,16 +4229,29 @@ local function main()
         end
 
         local loaded = false
+
+        -- AUTO LOAD: отдельная задержка только перед загрузкой макроса.
         if Settings.MacroAutoLoadOnStart and Macro.SelectedName then
-            local delay = tonumber(Settings.MacroAutoLoadDelay) or 0
-            if delay > 0 then task.wait(delay) end
-            loaded = Macro.LoadNamed(Macro.SelectedName, true) == true
+            local delay = math.max(0, tonumber(Settings.MacroAutoLoadDelay) or 0)
+            if delay > 0 then
+                task.wait(delay)
+            end
+
+            if Settings.MacroAutoLoadOnStart and Macro.SelectedName then
+                loaded = Macro.LoadNamed(Macro.SelectedName, true) == true
+            end
         end
 
+        -- AUTO START: отдельная задержка только после успешного Auto Load.
         if Settings.MacroAutoStartPlayback and loaded then
-            local delay = tonumber(Settings.MacroAutoStartDelay) or 0
-            if delay > 0 then task.wait(delay) end
-            Macro.Play()
+            local delay = math.max(0, tonumber(Settings.MacroAutoStartDelay) or 0)
+            if delay > 0 then
+                task.wait(delay)
+            end
+
+            if Settings.MacroAutoStartPlayback and #Macro.Data > 0 then
+                Macro.Play()
+            end
         end
     end)
 
@@ -4220,4 +4262,4 @@ local function main()
     end)
 end
 
-main()
+main() 
