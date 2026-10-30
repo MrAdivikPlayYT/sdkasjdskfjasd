@@ -16,16 +16,16 @@ end
 
 -- ---------- Allowed UserIDs (encrypted with +3) ----------
 local _ALLOWED = {
-    "6:8884<59<",
-    "636;6635:",
-    "5363<54474",
-    "67::79;3;4",
-    "443676<;39",
-    "43;39638:53",
-    "43;564599::",
-    "4434494<498",
-    "69;:9::356",
-    "484;<99<;;",
+    "6:8884<59<",   -- 3:5551<26<
+    "636;6635:",    -- 3:3363<36
+    "5363<54474",   -- 2:3<54<<4
+    "67::79;3;4",   -- 3:7774<6<3
+    "443676<;39",   -- 1103439<06
+    "43;39638:53",  -- 10:0636:5
+    "43;564599::",  -- 10:231266::
+    "4434494<498",  -- 11011619165  <- твой ID
+    "69;:9::356",   -- 3667:6::23
+    "484;<99<;;",   -- 1513<666<8
 }
 
 -- ---------- Auth check ----------
@@ -48,12 +48,12 @@ if not _allowed then
 end
 print("[Auth] Access granted for UserId: " .. tostring(_myId))
 
--- ---------- Safe load ----------
+-- ---------- Safe load (обходит require со строкой) ----------
 local function SafeLoadLibrary(url)
     local ok, result = pcall(function()
         local src = game:HttpGet(url)
-        if not src or src == "" or #src < 100 then
-            error("Empty or too-short response from " .. url)
+        if not src or src == "" then
+            error("Empty response from " .. url)
         end
         local fn, err = loadstring(src)
         if not fn then
@@ -62,9 +62,6 @@ local function SafeLoadLibrary(url)
         local callOk, lib = pcall(fn)
         if not callOk then
             error("Runtime error in library: " .. tostring(lib))
-        end
-        if lib == nil then
-            error("Library returned nil")
         end
         return lib
     end)
@@ -92,32 +89,17 @@ _G.SkibidiDefenseLoaded = true
 
 -- ---------- Load WindUI ----------
 local WindUI = SafeLoadLibrary("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua")
-
 if not WindUI then
-    warn("[Loader] WindUI is nil — aborting to avoid crash.")
     _G.SkibidiDefenseLoaded = nil
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
             Title = "Skibidi Defense",
-            Text = "Critical: UI failed to load! Restart the script.",
+            Text = "Critical: UI failed to load!",
             Duration = 10
         })
     end)
     return
 end
-
-if type(WindUI) ~= "table" and type(WindUI) ~= "userdata" then
-    warn("[Loader] WindUI loaded but invalid type: " .. type(WindUI))
-    _G.SkibidiDefenseLoaded = nil
-    return
-end
-
-if not WindUI.CreateWindow then
-    warn("[Loader] WindUI.CreateWindow is nil — invalid library.")
-    _G.SkibidiDefenseLoaded = nil
-    return
-end
-
 print("[Loader] WindUI loaded successfully")
 
 -- ============================================================
@@ -185,38 +167,71 @@ end
 
 local SERVER_NAMES = {
     Story = {
-        "Chapter 1", "Chapter 1.5", "Chapter 2", "Chapter 3", "Chapter 4",
-        "Chapter 5", "Chapter 6", "Chapter 7", "Chapter 8", "Chapter 9",
+        "Chapter 1",
+        "Chapter 1.5",
+        "Chapter 2",
+        "Chapter 3",
+        "Chapter 4",
+        "Chapter 5",
+        "Chapter 6",
+        "Chapter 7",
+        "Chapter 8",
+        "Chapter 9",
     },
     MULTIVERSE = {
-        "Multiverse Chapter 1", "Multiverse Chapter 1-3",
+        "Multiverse Chapter 1",
+        "Multiverse Chapter 1-3",
     },
     NIGHTMARE = {
-        "Suspicious Detections", "Rise Of The Corruption", "Spreaded Corruption",
-        "A Fight From the Past", "Land Of Creation", "The Final Showdown",
-        "The Last Base", "Civil War", "Void",
+        "Suspicious Detections",
+        "Rise Of The Corruption",
+        "Spreaded Corruption",
+        "A Fight From the Past",
+        "Land Of Creation",
+        "The Final Showdown",
+        "The Last Base",
+        "Civil War",
+        "Void",
     },
     EVENT = {
-        "Act 1 2026", "Act 2 2026", "Act 3 2026", "Act -1", "Act -2",
-        "Partner Takeover", "Skibi Trials",
+        "Act 1 2026",
+        "Act 2 2026",
+        "Act 3 2026",
+        "Act -1",
+        "Act -2",
+        "Partner Takeover",
+        "Skibi Trials",
     },
     VERSUS = {
-        "Versus 1v1", "Versus 2v2", "Versus 3v3", "Versus 4v4",
+        "Versus 1v1",
+        "Versus 2v2",
+        "Versus 3v3",
+        "Versus 4v4",
     },
     Endless = {
-        "Normal", "Roguelite",
+        "Normal",
+        "Roguelite",
     },
     EPISODES = {
-        "Episode 79", "Humble Beginnings",
+        "Episode 79",
+        "Humble Beginnings",
     },
 }
 
 local SERVER_TYPES = {
-    "Story", "MULTIVERSE", "NIGHTMARE", "EVENT", "VERSUS", "Endless", "EPISODES", "ALL",
+    "Story",
+    "MULTIVERSE",
+    "NIGHTMARE",
+    "EVENT",
+    "VERSUS",
+    "Endless",
+    "EPISODES",
+    "ALL",
 }
 
-local function _getChaptersSafe(lobbyType)
+local function _getChapters(lobbyType)
     if not lobbyType then return {} end
+
     if lobbyType == "ALL" then
         local result = {}
         local seen = {}
@@ -230,15 +245,18 @@ local function _getChaptersSafe(lobbyType)
         end
         return result
     end
+
     if SERVER_NAMES[lobbyType] then
         return SERVER_NAMES[lobbyType]
     end
+
     local lower = string.lower(lobbyType)
     for key, list in pairs(SERVER_NAMES) do
         if string.lower(key) == lower then
             return list
         end
     end
+
     return {}
 end
 
@@ -1087,28 +1105,18 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- SAFE WINDOW CREATION
+-- UI WINDOW
 -- ============================================================
-local Window
-do
-    local ok, res = pcall(function()
-        return WindUI:CreateWindow({
-            Title = CONFIG.NAME,
-            Author = "Private Script",
-            Folder = "SkibidiDefense",
-            Size = UDim2.fromOffset(500, 480),
-            Transparent = true,
-            Theme = "Dark",
-            SideBarWidth = 150
-        })
-    end)
-    if not ok or not res then
-        warn("[Skibidi] CreateWindow failed: " .. tostring(res))
-        _G.SkibidiDefenseLoaded = nil
-        return
-    end
-    Window = res
-end
+
+local Window = WindUI:CreateWindow({
+    Title = CONFIG.NAME,
+    Author = "Private Script",
+    Folder = "SkibidiDefense",
+    Size = UDim2.fromOffset(500, 480),
+    Transparent = true,
+    Theme = "Dark",
+    SideBarWidth = 150
+})
 
 pcall(function()
     Window:Tag({
@@ -1135,131 +1143,33 @@ local LobbyTab = Window:Tab({ Title = "Lobby" })
 
 LobbyTab:Section({ Title = "Party Settings" })
 
--- Вспомогательные функции
-local function findButtonInPlayerGui(names)
-    return _safe(function()
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if not pg then return nil end
-        local wanted = {}
-        for _, n in ipairs(names) do wanted[string.lower(n)] = true end
-        for _, obj in ipairs(pg:GetDescendants()) do
-            if obj:IsA("GuiButton") and obj.Visible then
-                local objName = string.lower(obj.Name)
-                local txt = ""
-                pcall(function() txt = string.lower(obj.Text) end)
-                if wanted[objName] or wanted[txt] then
-                    return obj
+local function _getChaptersSafe(lobbyType)
+    if not lobbyType then return {} end
+    if lobbyType == "ALL" then
+        local result = {}
+        local seen = {}
+        for _, key in ipairs({"Story", "MULTIVERSE", "NIGHTMARE", "EVENT", "VERSUS", "Endless", "EPISODES"}) do
+            for _, name in ipairs(SERVER_NAMES[key] or {}) do
+                if not seen[name] then
+                    seen[name] = true
+                    table.insert(result, name)
                 end
             end
         end
-        return nil
-    end)
-end
-
-local function _safeClickButton(button, label)
-    if not button then
-        AddLog("[Lobby] " .. label .. " — кнопка не найдена")
-        return false
+        return result
     end
-    local ok = false
-    _safe(function()
-        local conns = getconnections(button.MouseButton1Click)
-        if conns and #conns > 0 then
-            for _, c in ipairs(conns) do
-                if c.Enabled ~= false then
-                    if pcall(function() c:Fire() end) then
-                        ok = true
-                        break
-                    end
-                end
-            end
+    if SERVER_NAMES[lobbyType] then
+        return SERVER_NAMES[lobbyType]
+    end
+    local lower = string.lower(lobbyType)
+    for key, list in pairs(SERVER_NAMES) do
+        if string.lower(key) == lower then
+            return list
         end
-    end)
-    if not ok then
-        _safe(function()
-            button:Activate()
-            ok = true
-        end)
     end
-    AddLog("[Lobby] " .. label .. (ok and " — клик отправлен" or " — не удалось кликнуть"))
-    return ok
+    return {}
 end
 
-local function _waitForLobbyButton(names, timeout)
-    local started = os.clock()
-    while os.clock() - started < timeout do
-        local btn = findButtonInPlayerGui(names)
-        if btn then return btn end
-        task.wait(0.25)
-    end
-    return nil
-end
-
-local function getCreateServerRemote()
-    return _safe(function()
-        local ev = RS:FindFirstChild("Events")
-        local r = ev and ev:FindFirstChild("createServer")
-        if r then return r end
-        local le = RS:FindFirstChild("LobbyEvents")
-        r = le and le:FindFirstChild("createServer")
-        if r then return r end
-        return RS:FindFirstChild("createServer")
-    end)
-end
-
-local function getLobbyStartRemote()
-    return _safe(function()
-        local ev = RS:FindFirstChild("Events")
-        local r = ev and ev:FindFirstChild("start")
-        if r then return r end
-        local le = RS:FindFirstChild("LobbyEvents")
-        r = le and le:FindFirstChild("start")
-        if r then return r end
-        return RS:FindFirstChild("start")
-    end)
-end
-
-local function directCreateParty()
-    local remote = getCreateServerRemote()
-    if not remote then
-        AddLog("[Lobby] createServer remote НЕ НАЙДЕН в RS")
-        return false
-    end
-    AddLog("[Lobby] createServer → " .. tostring(_selectedChapter))
-    task.spawn(function()
-        local ok, err = pcall(function()
-            remote:InvokeServer(_selectedChapter)
-        end)
-        if ok then
-            AddLog("[Lobby] Create Party OK: " .. tostring(_selectedChapter))
-        else
-            AddLog("[Lobby] createServer error: " .. tostring(err))
-        end
-    end)
-    return true
-end
-
-local function directStart()
-    local remote = getLobbyStartRemote()
-    if not remote then
-        AddLog("[Lobby] start remote НЕ НАЙДЕН в RS")
-        return false
-    end
-    AddLog("[Lobby] start найден: " .. remote:GetFullName())
-    task.spawn(function()
-        local ok, err = pcall(function()
-            remote:FireServer(false)
-        end)
-        if ok then
-            AddLog("[Lobby] Start OK (false)")
-        else
-            AddLog("[Lobby] start error: " .. tostring(err))
-        end
-    end)
-    return true
-end
-
--- Дропдауны
 local _initialChapters = _getChaptersSafe(State.lobbyType or "Story")
 if #_initialChapters == 0 then _initialChapters = {"Chapter 1"} end
 
