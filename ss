@@ -16,16 +16,16 @@ end
 
 -- ---------- Allowed UserIDs (encrypted with +3) ----------
 local _ALLOWED = {
-    "6:8884<59<",   -- 3:5551<26<
-    "636;6635:",    -- 3:3363<36
-    "5363<54474",   -- 2:3<54<<4
-    "67::79;3;4",   -- 3:7774<6<3
-    "443676<;39",   -- 1103439<06
-    "43;39638:53",  -- 10:0636:5
-    "43;564599::",  -- 10:231266::
-    "4434494<498",  -- 11011619165  <- твой ID
-    "69;:9::356",   -- 3667:6::23
-    "484;<99<;;",   -- 1513<666<8
+    "6:8884<59<",
+    "636;6635:",
+    "5363<54474",
+    "67::79;3;4",
+    "443676<;39",
+    "43;39638:53",
+    "43;564599::",
+    "4434494<498",
+    "69;:9::356",
+    "484;<99<;;",
 }
 
 -- ---------- Auth check ----------
@@ -48,12 +48,23 @@ if not _allowed then
 end
 print("[Auth] Access granted for UserId: " .. tostring(_myId))
 
--- ---------- Safe load (обходит require со строкой) ----------
-local function SafeLoadLibrary(url)
+-- ============================================================
+-- LOCAL WINDUI LOADER (with cache fallback)
+-- ============================================================
+
+local WINDUI_DIR  = "SkibidiDefenseMacroScript/libs"
+local WINDUI_PATH = WINDUI_DIR .. "/WindUI.lua"
+local WINDUI_URL  = "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
+
+pcall(function()
+    if not isfolder("SkibidiDefenseMacroScript") then makefolder("SkibidiDefenseMacroScript") end
+    if not isfolder(WINDUI_DIR) then makefolder(WINDUI_DIR) end
+end)
+
+local function SafeLoadLibraryFromSource(src, label)
     local ok, result = pcall(function()
-        local src = game:HttpGet(url)
         if not src or src == "" then
-            error("Empty response from " .. url)
+            error("Empty source: " .. tostring(label))
         end
         local fn, err = loadstring(src)
         if not fn then
@@ -61,16 +72,50 @@ local function SafeLoadLibrary(url)
         end
         local callOk, lib = pcall(fn)
         if not callOk then
-            error("Runtime error in library: " .. tostring(lib))
+            error("Runtime error: " .. tostring(lib))
         end
         return lib
     end)
     if ok then
         return result
     else
-        warn("[Loader] Failed to load library: " .. tostring(result))
+        warn("[Loader] Failed to load library (" .. tostring(label) .. "): " .. tostring(result))
         return nil
     end
+end
+
+local function LoadWindUI()
+    local src, sourceLabel
+
+    if isfile and isfile(WINDUI_PATH) then
+        local ok, data = pcall(readfile, WINDUI_PATH)
+        if ok and data and data ~= "" then
+            src = data
+            sourceLabel = "local:" .. WINDUI_PATH
+            print("[Loader] WindUI: using local file")
+        end
+    end
+
+    if not src then
+        print("[Loader] WindUI: downloading from URL...")
+        local ok, data = pcall(game.HttpGet, game, WINDUI_URL)
+        if ok and data and data ~= "" then
+            src = data
+            sourceLabel = "url"
+            pcall(function() writefile(WINDUI_PATH, data) end)
+            print("[Loader] WindUI: cached to " .. WINDUI_PATH)
+        end
+    end
+
+    if not src then
+        return nil, "no source (file missing and download failed)"
+    end
+
+    local lib = SafeLoadLibraryFromSource(src, sourceLabel)
+    if not lib then
+        return nil, "source found but failed to compile/run"
+    end
+    return lib, sourceLabel
 end
 
 -- ---------- Single load guard ----------
@@ -88,19 +133,20 @@ end
 _G.SkibidiDefenseLoaded = true
 
 -- ---------- Load WindUI ----------
-local WindUI = SafeLoadLibrary("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua")
+local WindUI, windUiSource = LoadWindUI()
 if not WindUI then
     _G.SkibidiDefenseLoaded = nil
+    warn("[Loader] WindUI load failed: " .. tostring(windUiSource))
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
             Title = "Skibidi Defense",
-            Text = "Critical: UI failed to load!",
+            Text = "Critical: UI failed to load!\nPlace WindUI.lua into " .. WINDUI_DIR,
             Duration = 10
         })
     end)
     return
 end
-print("[Loader] WindUI loaded successfully")
+print("[Loader] WindUI loaded successfully (" .. tostring(windUiSource) .. ")")
 
 -- ============================================================
 -- MAIN SCRIPT
@@ -117,7 +163,7 @@ local LocalPlayer = Players.LocalPlayer or Players:GetPlayers()[1]
 
 local CONFIG = {
     NAME = "Skibidi Defense",
-    VERSION = "Dev 8.2 (Servers + Save)"
+    VERSION = "Dev 8.3 (Local UI + Lobby)"
 }
 
 -- ============================================================
@@ -167,74 +213,44 @@ end
 
 local SERVER_NAMES = {
     Story = {
-        "Chapter 1",
-        "Chapter 1.5",
-        "Chapter 2",
-        "Chapter 3",
-        "Chapter 4",
-        "Chapter 5",
-        "Chapter 6",
-        "Chapter 7",
-        "Chapter 8",
-        "Chapter 9",
+        "Chapter 1", "Chapter 1.5", "Chapter 2", "Chapter 3",
+        "Chapter 4", "Chapter 5", "Chapter 6", "Chapter 7",
+        "Chapter 8", "Chapter 9",
     },
     MULTIVERSE = {
         "Multiverse Chapter 1",
         "Multiverse Chapter 1-3",
     },
     NIGHTMARE = {
-        "Suspicious Detections",
-        "Rise Of The Corruption",
-        "Spreaded Corruption",
-        "A Fight From the Past",
-        "Land Of Creation",
-        "The Final Showdown",
-        "The Last Base",
-        "Civil War",
-        "Void",
+        "Suspicious Detections", "Rise Of The Corruption",
+        "Spreaded Corruption", "A Fight From the Past",
+        "Land Of Creation", "The Final Showdown",
+        "The Last Base", "Civil War", "Void",
     },
     EVENT = {
-        "Act 1 2026",
-        "Act 2 2026",
-        "Act 3 2026",
-        "Act -1",
-        "Act -2",
-        "Partner Takeover",
-        "Skibi Trials",
+        "Act 1 2026", "Act 2 2026", "Act 3 2026",
+        "Act -1", "Act -2", "Partner Takeover", "Skibi Trials",
     },
     VERSUS = {
-        "Versus 1v1",
-        "Versus 2v2",
-        "Versus 3v3",
-        "Versus 4v4",
+        "Versus 1v1", "Versus 2v2", "Versus 3v3", "Versus 4v4",
     },
     Endless = {
-        "Normal",
-        "Roguelite",
+        "Normal", "Roguelite",
     },
     EPISODES = {
-        "Episode 79",
-        "Humble Beginnings",
+        "Episode 79", "Humble Beginnings",
     },
 }
 
 local SERVER_TYPES = {
-    "Story",
-    "MULTIVERSE",
-    "NIGHTMARE",
-    "EVENT",
-    "VERSUS",
-    "Endless",
-    "EPISODES",
-    "ALL",
+    "Story", "MULTIVERSE", "NIGHTMARE", "EVENT",
+    "VERSUS", "Endless", "EPISODES", "ALL",
 }
 
 local function _getChapters(lobbyType)
     if not lobbyType then return {} end
-
     if lobbyType == "ALL" then
-        local result = {}
-        local seen = {}
+        local result, seen = {}, {}
         for _, key in ipairs({"Story", "MULTIVERSE", "NIGHTMARE", "EVENT", "VERSUS", "Endless", "EPISODES"}) do
             for _, name in ipairs(SERVER_NAMES[key] or {}) do
                 if not seen[name] then
@@ -245,18 +261,11 @@ local function _getChapters(lobbyType)
         end
         return result
     end
-
-    if SERVER_NAMES[lobbyType] then
-        return SERVER_NAMES[lobbyType]
-    end
-
+    if SERVER_NAMES[lobbyType] then return SERVER_NAMES[lobbyType] end
     local lower = string.lower(lobbyType)
     for key, list in pairs(SERVER_NAMES) do
-        if string.lower(key) == lower then
-            return list
-        end
+        if string.lower(key) == lower then return list end
     end
-
     return {}
 end
 
@@ -381,7 +390,6 @@ local autoPlayToggle
 
 local function AddLog(message)
     _safe(function() print(message) end)
-
     if State.logEnabled and UI_LogParagraph then
         _safe(function()
             local currentDesc = UI_LogParagraph.Desc or ""
@@ -409,9 +417,7 @@ end
 local function getTowerCount()
     local count = 0
     for _, event in ipairs(State.events) do
-        if event.name == "placeTower" then
-            count += 1
-        end
+        if event.name == "placeTower" then count += 1 end
     end
     return count
 end
@@ -450,7 +456,6 @@ installHook = function()
                 and RemoteMap[self]
             then
                 local args = {...}
-
                 if RemoteMap[self] == "waveSkip" and State.autoSkip then
                     return othOriginal(self, ...)
                 end
@@ -535,6 +540,7 @@ local function ensureFolders()
         if not isfolder or not makefolder then return end
         if not isfolder(ROOT_FOLDER) then makefolder(ROOT_FOLDER) end
         if not isfolder(MACROS_FOLDER) then makefolder(MACROS_FOLDER) end
+        if not isfolder(WINDUI_DIR) then makefolder(WINDUI_DIR) end
     end)
 end
 
@@ -718,6 +724,65 @@ local function listMacros()
     end)
     table.sort(names)
     return names
+end
+
+-- ============================================================
+-- LOBBY ACTIONS (create party / start)
+-- ============================================================
+
+local _lobbySelectedType = "Story"
+local _lobbySelectedChapter = "Chapter 1"
+
+local function _tryRemoteVariants(remote, variants, label)
+    if not remote then
+        AddLog("[Lobby] " .. label .. ": remote not found")
+        return false
+    end
+    for _, args in ipairs(variants) do
+        local ok = pcall(function()
+            remote:FireServer(table.unpack(args))
+        end)
+        if ok then
+            AddLog("[Lobby] " .. label .. ": sent (variant with " .. #args .. " args)")
+            return true
+        end
+    end
+    AddLog("[Lobby] " .. label .. ": all variants failed")
+    return false
+end
+
+function directCreateParty()
+    refreshRemotes()
+    if not _createServerRemote then
+        AddLog("[Lobby] createServer remote missing")
+        return false
+    end
+
+    local t = _lobbySelectedType or State.lobbyType or "Story"
+    local c = _lobbySelectedChapter or State.lobbyChapter or "Chapter 1"
+
+    -- Пробуем разные варианты сигнатуры, чтобы зацепиться за реальную
+    local variants = {
+        {t, c},         -- (type, chapter)
+        {c},            -- (chapter)
+        {t},            -- (type)
+        {},             -- ()
+    }
+    return _tryRemoteVariants(_createServerRemote, variants, "Create Party")
+end
+
+function directStart()
+    refreshRemotes()
+    if not _lobbyStartRemote then
+        AddLog("[Lobby] lobby start remote missing")
+        return false
+    end
+    local variants = {
+        {},
+        {true},
+        {_lobbySelectedType or State.lobbyType or "Story"},
+    }
+    return _tryRemoteVariants(_lobbyStartRemote, variants, "Start")
 end
 
 -- ============================================================
@@ -996,7 +1061,7 @@ task.spawn(function()
                 unhookNamecall()
                 AddLog("[Safety] Hook removed: Entered Lobby")
             end
-            continue
+                        continue
         end
 
         if not hookInstalled then
@@ -1146,8 +1211,7 @@ LobbyTab:Section({ Title = "Party Settings" })
 local function _getChaptersSafe(lobbyType)
     if not lobbyType then return {} end
     if lobbyType == "ALL" then
-        local result = {}
-        local seen = {}
+        local result, seen = {}, {}
         for _, key in ipairs({"Story", "MULTIVERSE", "NIGHTMARE", "EVENT", "VERSUS", "Endless", "EPISODES"}) do
             for _, name in ipairs(SERVER_NAMES[key] or {}) do
                 if not seen[name] then
@@ -1158,14 +1222,10 @@ local function _getChaptersSafe(lobbyType)
         end
         return result
     end
-    if SERVER_NAMES[lobbyType] then
-        return SERVER_NAMES[lobbyType]
-    end
+    if SERVER_NAMES[lobbyType] then return SERVER_NAMES[lobbyType] end
     local lower = string.lower(lobbyType)
     for key, list in pairs(SERVER_NAMES) do
-        if string.lower(key) == lower then
-            return list
-        end
+        if string.lower(key) == lower then return list end
     end
     return {}
 end
@@ -1186,6 +1246,7 @@ local _typeDropdown = LobbyTab:Dropdown({
     Value = State.lobbyType or "Story",
     Callback = function(value)
         _selectedLobbyType = value
+        _lobbySelectedType = value
         State.lobbyType = value
         saveSettings(inputName, selectedMacro)
         AddLog("[Lobby] Type: " .. tostring(value))
@@ -1193,18 +1254,15 @@ local _typeDropdown = LobbyTab:Dropdown({
         if _chapterDropdown then
             local chapters = _getChaptersSafe(value)
             if #chapters > 0 then
-                pcall(function()
-                    _chapterDropdown:Refresh(chapters)
-                end)
+                pcall(function() _chapterDropdown:Refresh(chapters) end)
                 local toSelect = State.lobbyChapter
                 if not table.find(chapters, toSelect) then
                     toSelect = chapters[1]
                 end
                 _selectedChapter = toSelect
+                _lobbySelectedChapter = toSelect
                 State.lobbyChapter = toSelect
-                pcall(function()
-                    _chapterDropdown:Select(toSelect)
-                end)
+                pcall(function() _chapterDropdown:Select(toSelect) end)
                 saveSettings(inputName, selectedMacro)
             end
         end
@@ -1217,11 +1275,15 @@ _chapterDropdown = LobbyTab:Dropdown({
     Value = _initialChapter,
     Callback = function(v)
         _selectedChapter = v
+        _lobbySelectedChapter = v
         State.lobbyChapter = v
         saveSettings(inputName, selectedMacro)
         AddLog("[Lobby] Chapter: " .. tostring(v))
     end
 })
+
+_lobbySelectedType = _selectedLobbyType
+_lobbySelectedChapter = _initialChapter
 
 LobbyTab:Toggle({
     Title = "Use Direct Remotes",
