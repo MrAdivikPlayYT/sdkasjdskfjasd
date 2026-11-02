@@ -8,6 +8,55 @@ local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
+local PlazaPlaceId = 18711550363
+local LoaderURL = "https://raw.githubusercontent.com/MrAdivikPlayYT/sdkasjdskfjasd/refs/heads/main/DoorFarm"
+
+-- Outside the Plaza: queue this script for the next server, then teleport there.
+-- In the lobby the game's own TeleportToPlaza remote is used (same call as its TELEPORT button),
+-- since a plain client TeleportService teleport always lands on a public Plaza.
+if game.PlaceId ~= PlazaPlaceId then
+    if game.GameId ~= 4938220315 then return end
+    local queue = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+    if type(queue) == "function" then
+        pcall(queue, string.format([[
+            if not game:IsLoaded() then game.Loaded:Wait() end
+            local env = type(getgenv) == "function" and getgenv() or _G
+            env.DoorFarmAutoStart = true
+            loadstring(game:HttpGet(%q))()
+        ]], LoaderURL))
+    else
+        warn("[DoorFarm] Executor has no queue_on_teleport; run the script again on the Plaza")
+    end
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Door Farm", Text = "Teleporting to the Plaza...", Duration = 5,
+        })
+    end)
+    local TeleportService = game:GetService("TeleportService")
+    local failed = false
+    local connection = TeleportService.TeleportInitFailed:Connect(function(player, result, message)
+        if player == LocalPlayer then
+            failed = true
+            warn("[DoorFarm] Plaza teleport failed: " .. tostring(result) .. " " .. tostring(message))
+        end
+    end)
+    for attempt = 1, 5 do
+        failed = false
+        local remote = ReplicatedStorage:FindFirstChild("TeleportToPlaza")
+        if remote and remote:IsA("RemoteEvent") and attempt <= 3 then
+            pcall(function() remote:FireServer() end)
+        else
+            pcall(function() TeleportService:Teleport(PlazaPlaceId, LocalPlayer) end)
+        end
+        -- A server-side teleport reports no failure to the client: still being here after 20s means retry.
+        local untilAt = os.clock() + 20
+        repeat task.wait(0.5) until failed or os.clock() > untilAt
+        if failed then task.wait(3) end
+    end
+    connection:Disconnect()
+    return
+end
+
 local Env = type(getgenv) == "function" and getgenv() or _G
 if Env.DoorFarm and type(Env.DoorFarm.Destroy) == "function" then pcall(Env.DoorFarm.Destroy) end
 local Farm = { Alive = true, Connections = {} }
@@ -744,5 +793,9 @@ task.spawn(function()
         task.wait(0.5)
     end
 end)
-if State.AutoStart then task.delay(1, Farm.Start) end
+-- DoorFarmAutoStart is set by the teleport queue, so an automatic Plaza trip always starts farming.
+if State.AutoStart or Env.DoorFarmAutoStart then
+    Env.DoorFarmAutoStart = nil
+    task.delay(1, Farm.Start)
+end
 print("[DoorFarm] Loaded. RightControl hides the panel.")
