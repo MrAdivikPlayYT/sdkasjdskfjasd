@@ -1,0 +1,804 @@
+-- Door Farm: fast Halloween door looting with a loading screen, live panel and Discord webhook.
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local Env = type(getgenv) == "function" and getgenv() or _G
+if Env.DoorFarm and type(Env.DoorFarm.Destroy) == "function" then pcall(Env.DoorFarm.Destroy) end
+local Farm = { Alive = true, Connections = {} }
+Env.DoorFarm = Farm
+
+local Theme = {
+    Bg = Color3.fromRGB(14, 14, 20),
+    Top = Color3.fromRGB(30, 22, 34),
+    Panel = Color3.fromRGB(24, 24, 34),
+    Line = Color3.fromRGB(44, 44, 62),
+    Text = Color3.fromRGB(242, 242, 248),
+    Dim = Color3.fromRGB(150, 150, 172),
+    Accent = Color3.fromRGB(255, 140, 40),
+    Good = Color3.fromRGB(80, 220, 140),
+    Bad = Color3.fromRGB(239, 68, 68),
+}
+
+local function New(class, props, children)
+    local object = Instance.new(class)
+    for key, value in pairs(props or {}) do
+        if key ~= "Parent" then object[key] = value end
+    end
+    for _, child in ipairs(children or {}) do child.Parent = object end
+    if props and props.Parent then object.Parent = props.Parent end
+    return object
+end
+local function Corner(radius) return New("UICorner", { CornerRadius = UDim.new(0, radius or 10) }) end
+local function Stroke(color, transparency)
+    return New("UIStroke", { Color = color or Theme.Line, Thickness = 1, Transparency = transparency or 0 })
+end
+local function Label(props)
+    props.BackgroundTransparency = 1
+    props.Font = props.Font or Enum.Font.Gotham
+    props.TextColor3 = props.TextColor3 or Theme.Text
+    props.TextXAlignment = props.TextXAlignment or Enum.TextXAlignment.Left
+    props.TextTruncate = props.TextTruncate or Enum.TextTruncate.AtEnd
+    return New("TextLabel", props)
+end
+
+local function MountGui(name, order)
+    local gui = New("ScreenGui", {
+        Name = name, IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = order,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    })
+    local parent
+    if type(gethui) == "function" then
+        local ok, hidden = pcall(gethui)
+        if ok then parent = hidden end
+    end
+    if not pcall(function() gui.Parent = parent or game:GetService("CoreGui") end) then
+        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+    return gui
+end
+
+-- Access check ---------------------------------------------------------------
+local function Decrypt(s)
+    local out = {}
+    for i = 1, #s do out[i] = string.char(s:byte(i) - 3) end
+    return table.concat(out)
+end
+local ALLOWED = {
+    "6:8884<59<", "636;6635:", "5363<54474", "67::79;3;4", "443676<;39",
+    "43;39638:53", "43;564599::", "4434494<498", "69;:9::356", "484;<99<;;",
+}
+local Allowed = false
+for _, value in ipairs(ALLOWED) do
+    if tonumber(Decrypt(value)) == LocalPlayer.UserId then Allowed = true break end
+end
+
+-- Short animated loading card (about 1s). Cosmetic only: the check above decides.
+pcall(function()
+    local gui = MountGui("DoorFarmAuth", 2147483646)
+    local accent = Allowed and Theme.Accent or Theme.Bad
+    local card = New("CanvasGroup", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(280, 118), GroupTransparency = 1,
+        BackgroundColor3 = Theme.Bg, BorderSizePixel = 0, Parent = gui,
+    }, {
+        Corner(14), Stroke(accent, 0.35),
+        New("UIGradient", { Rotation = 90, Color = ColorSequence.new(Theme.Top, Theme.Bg) }),
+    })
+    Label({ Position = UDim2.fromOffset(18, 16), Size = UDim2.new(1, -36, 0, 24), Font = Enum.Font.GothamBold,
+        TextSize = 19, Text = "🎃  Door Farm", Parent = card })
+    local status = Label({ Position = UDim2.fromOffset(18, 46), Size = UDim2.new(1, -36, 0, 18), TextSize = 13,
+        TextColor3 = Theme.Dim, Text = "Verifying access...", Parent = card })
+    local track = New("Frame", { Position = UDim2.new(0, 18, 1, -28), Size = UDim2.new(1, -36, 0, 5),
+        BackgroundColor3 = Theme.Line, BorderSizePixel = 0, Parent = card }, { Corner(99) })
+    local fill = New("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = accent, BorderSizePixel = 0,
+        Parent = track }, { Corner(99) })
+
+    TweenService:Create(card, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { GroupTransparency = 0, Size = UDim2.fromOffset(310, 126) }):Play()
+    TweenService:Create(fill, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { Size = UDim2.fromScale(0.75, 1) }):Play()
+    task.wait(0.45)
+    status.Text = Allowed and ("Access granted - welcome, " .. LocalPlayer.DisplayName) or "Access denied"
+    status.TextColor3 = accent
+    TweenService:Create(fill, TweenInfo.new(0.15), { Size = UDim2.fromScale(1, 1) }):Play()
+    task.wait(Allowed and 0.5 or 1.2)
+    TweenService:Create(card, TweenInfo.new(0.2), { GroupTransparency = 1, Size = UDim2.fromOffset(280, 118) }):Play()
+    task.wait(0.2)
+    gui:Destroy()
+end)
+
+if not Allowed then
+    pcall(function() LocalPlayer:Kick("No access") end)
+    print("[DoorFarm] Access denied for UserId: " .. tostring(LocalPlayer.UserId))
+    return
+end
+print("[DoorFarm] Access granted for UserId: " .. tostring(LocalPlayer.UserId))
+
+-- Storage ----------------------------------------------------------------------
+local Folder = "DoorFarm"
+local HasFS = type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+    and type(isfolder) == "function" and type(makefolder) == "function"
+local function ReadJSON(path)
+    if not HasFS then return nil end
+    local ok, data = pcall(function() return isfile(path) and HttpService:JSONDecode(readfile(path)) end)
+    return ok and type(data) == "table" and data or nil
+end
+local function WriteJSON(path, data)
+    if not HasFS then return end
+    pcall(function()
+        if not isfolder(Folder) then makefolder(Folder) end
+        writefile(path, HttpService:JSONEncode(data))
+    end)
+end
+
+local ConfigPath = Folder .. "/config.json"
+local CooldownPath = Folder .. "/cooldowns_" .. LocalPlayer.UserId .. ".json"
+local Config = ReadJSON(ConfigPath) or {}
+local State = {
+    Running = false, Session = 0, StartedAt = os.clock(),
+    WebhookURL = tostring(Config.WebhookURL or ""), WebhookEnabled = Config.WebhookEnabled == true,
+    AutoStart = Config.AutoStart == true, KickWhenDone = Config.KickWhenDone ~= false, WebhookStatus = "",
+    Doors = 0, Treats = 0, Tricks = 0, Loot = {}, LootOrder = {}, Log = {},
+    Cooldowns = {}, Retry = {}, Status = "Idle", Detail = "Press Start", SweepDone = 0, SweepTotal = 0,
+}
+local function SaveConfig()
+    WriteJSON(ConfigPath, {
+        WebhookURL = State.WebhookURL, WebhookEnabled = State.WebhookEnabled,
+        AutoStart = State.AutoStart, KickWhenDone = State.KickWhenDone,
+    })
+end
+do
+    local now = os.time()
+    for name, expires in pairs(ReadJSON(CooldownPath) or {}) do
+        if type(name) == "string" and type(expires) == "number" and expires > now and expires <= now + 1905 then
+            State.Cooldowns[name] = expires
+        end
+    end
+end
+local function SetCooldown(name, seconds)
+    State.Cooldowns[name] = os.time() + math.ceil(seconds) + 2
+    WriteJSON(CooldownPath, State.Cooldowns)
+end
+
+-- Formatting -------------------------------------------------------------------
+local function Comma(n)
+    local s, replaced = tostring(math.floor(n)), 0
+    repeat s, replaced = s:gsub("^(%d+)(%d%d%d)", "%1,%2") until replaced == 0
+    return s
+end
+local function Clock(seconds)
+    seconds = math.max(0, math.floor(seconds))
+    local h, m, s = math.floor(seconds / 3600), math.floor(seconds % 3600 / 60), seconds % 60
+    return h > 0 and string.format("%d:%02d:%02d", h, m, s) or string.format("%02d:%02d", m, s)
+end
+local function Escape(text) return (tostring(text or ""):gsub("([\\`*_~|>])", "\\%1")) end
+
+local function ParseRewards(text)
+    local rewards = {}
+    for amount, name in tostring(text or ""):gmatch("%+%s*([%d,]+)%s+([^!\n]+)") do
+        local value = tonumber((amount:gsub(",", "")))
+        name = name:gsub("^%s+", ""):gsub("[%s%.!]+$", "")
+        if value and name ~= "" then rewards[#rewards + 1] = { Name = name, Amount = value } end
+    end
+    return rewards
+end
+local function CooldownSeconds(text)
+    text = tostring(text or ""):lower()
+    if not (text:find("cooldown", 1, true) or text:find("come back", 1, true) or text:find("already", 1, true)) then
+        return nil
+    end
+    local minutes = tonumber(text:match("(%d+)%s*min")) or 0
+    local seconds = tonumber(text:match("(%d+)%s*sec")) or 0
+    local total = minutes * 60 + seconds
+    return total > 0 and total or 1800
+end
+
+-- Discord webhook ----------------------------------------------------------------
+local function ValidURL(url)
+    return type(url) == "string" and (url:match("^https://discord%.com/api/webhooks/%d+/[%w_%-]+$") ~= nil
+        or url:match("^https://discordapp%.com/api/webhooks/%d+/[%w_%-]+$") ~= nil
+        or url:match("^https://ptb%.discord%.com/api/webhooks/%d+/[%w_%-]+$") ~= nil
+        or url:match("^https://canary%.discord%.com/api/webhooks/%d+/[%w_%-]+$") ~= nil)
+end
+local function LootText()
+    local lines = {}
+    for _, name in ipairs(State.LootOrder) do
+        lines[#lines + 1] = string.format("`+%s` %s", Comma(State.Loot[name]), Escape(name))
+    end
+    return #lines > 0 and table.concat(lines, "\n"):sub(1, 1000) or "Nothing yet"
+end
+local function Account()
+    return string.format("||%s (@%s)||", Escape(LocalPlayer.DisplayName), Escape(LocalPlayer.Name))
+end
+local function SessionLine()
+    return string.format("Doors **%d** · Treats **%d** · Tricks **%d** · %s",
+        State.Doors, State.Treats, State.Tricks, Clock(os.clock() - State.StartedAt))
+end
+local function Post(embed, force)
+    if not force and not State.WebhookEnabled then return false, "Webhook is off" end
+    if not ValidURL(State.WebhookURL) then return false, "Enter a valid Discord webhook URL" end
+    local send = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+    if type(send) ~= "function" then return false, "Executor has no HTTP request" end
+    local body = HttpService:JSONEncode({ username = "Door Farm", allowed_mentions = { parse = {} }, embeds = { embed } })
+    local ok, response = pcall(send, {
+        Url = State.WebhookURL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body,
+    })
+    local code = ok and type(response) == "table" and tonumber(response.StatusCode or response.Status)
+    return code ~= nil and code >= 200 and code < 300, code and ("HTTP " .. code) or "Request failed"
+end
+local function RewardEmbed(door, rewards, text)
+    local lines = {}
+    for _, reward in ipairs(rewards) do
+        lines[#lines + 1] = string.format("**+%s %s**", Comma(reward.Amount), Escape(reward.Name))
+    end
+    return {
+        title = "🎃 Treat!  ·  " .. door,
+        description = #lines > 0 and table.concat(lines, "\n") or ("*" .. Escape(text) .. "*"),
+        color = 0xFF8C28,
+        fields = {
+            { name = "👤 Account", value = Account(), inline = true },
+            { name = "🚪 Door", value = door, inline = true },
+            { name = "🕒 Time", value = "<t:" .. os.time() .. ":T>", inline = true },
+            { name = "🎒 Session loot", value = LootText(), inline = false },
+            { name = "📊 Session", value = SessionLine(), inline = false },
+        },
+        footer = { text = "Door Farm" },
+        timestamp = DateTime.now():ToIsoDate(),
+    }
+end
+local function SummaryEmbed(sweep)
+    return {
+        title = "✅ Sweep finished",
+        description = string.format("Knocked **%d** doors · **%d** treats this sweep", sweep.Doors, sweep.Treats),
+        color = 0x50DC8C,
+        fields = {
+            { name = "👤 Account", value = Account(), inline = true },
+            { name = "🕒 Time", value = "<t:" .. os.time() .. ":T>", inline = true },
+            { name = "🎒 Session loot", value = LootText(), inline = false },
+            { name = "📊 Session", value = SessionLine(), inline = false },
+        },
+        footer = { text = "Door Farm" },
+        timestamp = DateTime.now():ToIsoDate(),
+    }
+end
+
+local function EndedEmbed()
+    return {
+        title = "🏁 Farm Ended",
+        description = "Every door on this server is looted. Leaving the game.",
+        color = 0xEF4444,
+        fields = {
+            { name = "👤 Account", value = Account(), inline = true },
+            { name = "🕒 Time", value = "<t:" .. os.time() .. ":T>", inline = true },
+            { name = "🎒 Session loot", value = LootText(), inline = false },
+            { name = "📊 Session", value = SessionLine(), inline = false },
+        },
+        footer = { text = "Door Farm" },
+        timestamp = DateTime.now():ToIsoDate(),
+    }
+end
+
+-- UI -------------------------------------------------------------------------------
+local Ui = {}
+local WindowHeight = 630
+local RefreshUI, RebuildLists
+
+local function SetStatus(status, detail)
+    State.Status, State.Detail = status, detail or ""
+    if RefreshUI then RefreshUI() end
+end
+local function AddLog(door, text, color)
+    table.insert(State.Log, 1, { Time = os.date("%H:%M:%S"), Door = door, Text = text, Color = color or Theme.Dim })
+    if #State.Log > 40 then table.remove(State.Log) end
+    if RebuildLists then RebuildLists() end
+end
+
+do
+    local gui = MountGui("DoorFarm", 100)
+    Ui.Gui = gui
+    local window = New("Frame", {
+        AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 24, 0.5, 0), Size = UDim2.fromOffset(340, WindowHeight),
+        BackgroundColor3 = Theme.Bg, BorderSizePixel = 0, ClipsDescendants = true, Parent = gui,
+    }, {
+        Corner(14), Stroke(Theme.Line),
+        New("UIGradient", { Rotation = 90, Color = ColorSequence.new(Theme.Top, Theme.Bg) }),
+    })
+    Ui.Window = window
+
+    -- Header: title, account and minimize.
+    local top = New("Frame", { Size = UDim2.new(1, 0, 0, 56), BackgroundTransparency = 1, Parent = window })
+    New("Frame", { Position = UDim2.fromOffset(14, 12), Size = UDim2.fromOffset(32, 32), BackgroundColor3 = Theme.Accent,
+        BackgroundTransparency = 0.8, BorderSizePixel = 0, Parent = top }, {
+        Corner(9), Label({ Size = UDim2.fromScale(1, 1), Text = "🎃", TextSize = 18,
+            TextXAlignment = Enum.TextXAlignment.Center }),
+    })
+    Label({ Position = UDim2.fromOffset(56, 11), Size = UDim2.new(1, -110, 0, 18), Font = Enum.Font.GothamBold,
+        TextSize = 16, Text = "Door Farm", Parent = top })
+    Label({ Position = UDim2.fromOffset(56, 30), Size = UDim2.new(1, -110, 0, 14), TextSize = 12, TextColor3 = Theme.Dim,
+        Text = LocalPlayer.DisplayName .. "  ·  @" .. LocalPlayer.Name, Parent = top })
+    local minimize = New("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 14),
+        Size = UDim2.fromOffset(28, 28), BackgroundColor3 = Theme.Panel, AutoButtonColor = false, Text = "–",
+        Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = Theme.Dim, Parent = top }, { Corner(8) })
+    New("Frame", { Position = UDim2.new(0, 0, 0, 56), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = Theme.Line,
+        BorderSizePixel = 0, Parent = window })
+
+    local body = New("Frame", { Position = UDim2.fromOffset(0, 57), Size = UDim2.new(1, 0, 1, -57),
+        BackgroundTransparency = 1, Parent = window }, {
+        New("UIPadding", { PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14), PaddingTop = UDim.new(0, 12) }),
+        New("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }),
+    })
+    local order = 0
+    local function Block(height, props)
+        order = order + 1
+        props = props or {}
+        props.Size, props.LayoutOrder, props.Parent = UDim2.new(1, 0, 0, height), order, body
+        props.BorderSizePixel = 0
+        props.BackgroundColor3 = props.BackgroundColor3 or Theme.Panel
+        return New("Frame", props, { Corner(10) })
+    end
+
+    -- Status card with sweep progress.
+    local status = Block(64)
+    Ui.Status = Label({ Position = UDim2.fromOffset(12, 10), Size = UDim2.new(1, -24, 0, 18), Font = Enum.Font.GothamBold,
+        TextSize = 14, Parent = status })
+    Ui.Detail = Label({ Position = UDim2.fromOffset(12, 30), Size = UDim2.new(1, -24, 0, 14), TextSize = 12,
+        TextColor3 = Theme.Dim, Parent = status })
+    local track = New("Frame", { Position = UDim2.new(0, 12, 1, -12), Size = UDim2.new(1, -24, 0, 4),
+        BackgroundColor3 = Theme.Line, BorderSizePixel = 0, Parent = status }, { Corner(99) })
+    Ui.Progress = New("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = Theme.Accent, BorderSizePixel = 0,
+        Parent = track }, { Corner(99) })
+
+    -- Stat tiles.
+    local tiles = Block(54, { BackgroundTransparency = 1 })
+    New("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8), Parent = tiles })
+    Ui.Tiles = {}
+    for _, name in ipairs({ "Doors", "Treats", "Tricks", "Time" }) do
+        local tile = New("Frame", { Size = UDim2.new(0.25, -6, 1, 0), BackgroundColor3 = Theme.Panel, BorderSizePixel = 0,
+            Parent = tiles }, { Corner(10) })
+        Ui.Tiles[name] = Label({ Position = UDim2.fromOffset(0, 8), Size = UDim2.new(1, 0, 0, 20), Font = Enum.Font.GothamBold,
+            TextSize = 17, TextXAlignment = Enum.TextXAlignment.Center, Text = "0", Parent = tile })
+        Label({ Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = Theme.Dim,
+            TextXAlignment = Enum.TextXAlignment.Center, Text = name, Parent = tile })
+    end
+
+    local function ListBlock(title, height)
+        local block = Block(height)
+        Label({ Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 14), Font = Enum.Font.GothamBold,
+            TextSize = 12, TextColor3 = Theme.Dim, Text = title:upper(), Parent = block })
+        local list = New("ScrollingFrame", { Position = UDim2.fromOffset(12, 28), Size = UDim2.new(1, -18, 1, -34),
+            BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.Line,
+            AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Parent = block }, {
+            New("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }),
+        })
+        return list
+    end
+    Ui.Loot = ListBlock("Loot", 96)
+    Ui.Log = ListBlock("Activity", 124)
+
+    -- Start / stop.
+    order = order + 1
+    Ui.Start = New("TextButton", { Size = UDim2.new(1, 0, 0, 40), LayoutOrder = order, BackgroundColor3 = Theme.Accent,
+        AutoButtonColor = false, Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1),
+        Text = "Start", Parent = body }, { Corner(10) })
+
+    -- Webhook URL.
+    local urlBlock = Block(34)
+    Ui.URL = New("TextBox", { Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), BackgroundTransparency = 1,
+        ClearTextOnFocus = false, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = Theme.Text,
+        PlaceholderText = "Discord webhook URL", PlaceholderColor3 = Theme.Dim, Text = State.WebhookURL,
+        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = urlBlock })
+
+    -- Toggles and test button.
+    local row = Block(30, { BackgroundTransparency = 1 })
+    New("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8), Parent = row })
+    local function Pill(parent, text, width, get, set)
+        local button = New("TextButton", { Size = width, BackgroundColor3 = Theme.Panel,
+            AutoButtonColor = false, Text = "", Parent = parent }, { Corner(8) })
+        local dot = New("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 10, 0.5, 0),
+            Size = UDim2.fromOffset(8, 8), BorderSizePixel = 0, Parent = button }, { Corner(99) })
+        Label({ Position = UDim2.fromOffset(24, 0), Size = UDim2.new(1, -28, 1, 0), Font = Enum.Font.GothamMedium,
+            TextSize = 12, Text = text, Parent = button })
+        local function paint() dot.BackgroundColor3 = get() and Theme.Good or Theme.Line end
+        button.Activated:Connect(function() set(not get()); paint() end)
+        paint()
+    end
+    Pill(row, "Webhook", UDim2.new(0, 104, 1, 0), function() return State.WebhookEnabled end,
+        function(v) State.WebhookEnabled = v; SaveConfig() end)
+    Pill(row, "Auto start", UDim2.new(0, 108, 1, 0), function() return State.AutoStart end,
+        function(v) State.AutoStart = v; SaveConfig() end)
+    Ui.Test = New("TextButton", { Size = UDim2.new(1, -220, 1, 0), BackgroundColor3 = Theme.Panel, AutoButtonColor = false,
+        Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = Theme.Text, Text = "Test", Parent = row }, { Corner(8) })
+    Pill(Block(30, { BackgroundTransparency = 1 }), "Kick when all doors are looted  ·  Farm Ended", UDim2.fromScale(1, 1),
+        function() return State.KickWhenDone end, function(v) State.KickWhenDone = v; SaveConfig() end)
+
+    order = order + 1
+    Ui.WebhookStatus = Label({ Size = UDim2.new(1, 0, 0, 14), LayoutOrder = order, TextSize = 11, TextColor3 = Theme.Dim,
+        Text = "", Parent = body })
+
+    -- Drag by the header; RightControl or the button hides the panel.
+    local dragging, dragStart, startPos
+    top.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging, dragStart, startPos = true, input.Position, window.Position
+        end
+    end)
+    table.insert(Farm.Connections, UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end))
+    table.insert(Farm.Connections, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end))
+    local collapsed = false
+    local function setCollapsed(value)
+        collapsed = value
+        TweenService:Create(window, TweenInfo.new(0.18, Enum.EasingStyle.Quad),
+            { Size = UDim2.fromOffset(340, collapsed and 56 or WindowHeight) }):Play()
+        minimize.Text = collapsed and "+" or "–"
+    end
+    minimize.Activated:Connect(function() setCollapsed(not collapsed) end)
+    table.insert(Farm.Connections, UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and input.KeyCode == Enum.KeyCode.RightControl then window.Visible = not window.Visible end
+    end))
+
+    Ui.URL.FocusLost:Connect(function()
+        State.WebhookURL = Ui.URL.Text:gsub("^%s+", ""):gsub("%s+$", "")
+        Ui.URL.Text = State.WebhookURL
+        SaveConfig()
+    end)
+end
+
+local function Row(parent, left, right, color, layout)
+    local row = New("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, LayoutOrder = layout, Parent = parent })
+    Label({ Size = UDim2.new(0.62, 0, 1, 0), TextSize = 12, TextColor3 = Theme.Text, Text = left, Parent = row })
+    Label({ Position = UDim2.fromScale(0.62, 0), Size = UDim2.new(0.38, 0, 1, 0), TextSize = 12, Font = Enum.Font.GothamMedium,
+        TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Right, Text = right, Parent = row })
+end
+
+RebuildLists = function()
+    for _, list in ipairs({ Ui.Loot, Ui.Log }) do
+        for _, child in ipairs(list:GetChildren()) do
+            if child:IsA("Frame") then child:Destroy() end
+        end
+    end
+    if #State.LootOrder == 0 then
+        Row(Ui.Loot, "Nothing yet", "", Theme.Dim, 1)
+    end
+    for index, name in ipairs(State.LootOrder) do
+        Row(Ui.Loot, name, "+" .. Comma(State.Loot[name]), Theme.Accent, index)
+    end
+    for index, entry in ipairs(State.Log) do
+        Row(Ui.Log, entry.Time .. "  " .. entry.Door, entry.Text, entry.Color, index)
+    end
+end
+
+RefreshUI = function()
+    if not Ui.Status then return end
+    Ui.Status.Text = State.Status
+    Ui.Detail.Text = State.Detail
+    Ui.Tiles.Doors.Text = tostring(State.Doors)
+    Ui.Tiles.Treats.Text = tostring(State.Treats)
+    Ui.Tiles.Tricks.Text = tostring(State.Tricks)
+    Ui.Tiles.Time.Text = Clock(os.clock() - State.StartedAt)
+    local progress = State.SweepTotal > 0 and math.clamp(State.SweepDone / State.SweepTotal, 0, 1) or 0
+    Ui.Progress.Size = UDim2.fromScale(progress, 1)
+    Ui.Start.Text = State.Running and "Stop" or "Start"
+    Ui.Start.BackgroundColor3 = State.Running and Theme.Bad or Theme.Accent
+    Ui.WebhookStatus.Text = State.WebhookStatus
+end
+
+-- Doors ------------------------------------------------------------------------------
+local Pending
+local Bound = setmetatable({}, { __mode = "k" })
+
+local function Find(root, path)
+    for name in path:gmatch("[^/]+") do root = root and root:FindFirstChild(name) end
+    return root
+end
+local function OnToast(data)
+    local pending = Pending
+    if not pending or type(data) ~= "table" then return end
+    local title, text = tostring(data.Title or ""), tostring(data.ContentText or "")
+    local lower = (title .. " " .. text):lower()
+    for _, word in ipairs({ "treat", "trick", "door", "cooldown", "knock", "come back" }) do
+        if lower:find(word, 1, true) then pending.Title, pending.Text = title, text return end
+    end
+end
+local function OnCamera(part, mode)
+    local pending = Pending
+    if pending and mode == "lock" and typeof(part) == "Instance" and part:IsDescendantOf(pending.Door) then
+        pending.Locked = true
+    end
+end
+local function Bind()
+    local function bind(remote, callback)
+        if remote and remote:IsA("RemoteEvent") and not Bound[remote] then
+            Bound[remote] = true
+            table.insert(Farm.Connections, remote.OnClientEvent:Connect(callback))
+        end
+    end
+    bind(Find(ReplicatedStorage, "Toasts/Assets/Remotes/Display"), OnToast)
+    bind(Find(ReplicatedStorage, "EventStuff/TweenCamera"), OnCamera)
+end
+
+local function PromptPosition(prompt)
+    local parent = prompt.Parent
+    if parent and parent:IsA("Attachment") then return parent.WorldPosition end
+    if parent and parent:IsA("BasePart") then return parent.Position end
+    if parent and parent:IsA("Model") then return parent:GetPivot().Position end
+end
+-- Door numbers have gaps (Door12, Door14...), so doors are found by name pattern, never by counting.
+local function Doors()
+    local list = {}
+    for _, door in ipairs(workspace:GetChildren()) do
+        if door:IsA("Model") and door.Name:match("^Door%d+$") then
+            local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
+            local position = prompt and PromptPosition(prompt)
+            if position then list[#list + 1] = { Door = door, Prompt = prompt, Pos = position } end
+        end
+    end
+    return list
+end
+local function Ready(entry)
+    return entry.Prompt.Enabled and entry.Door.Parent ~= nil
+        and (State.Cooldowns[entry.Door.Name] or 0) <= os.time()
+        and (State.Retry[entry.Door.Name] or 0) <= os.clock()
+end
+local function GetRoot()
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if root and humanoid and humanoid.Health > 0 then return root, character, humanoid end
+end
+local function RestoreCamera()
+    local camera = workspace.CurrentCamera
+    local _, _, humanoid = GetRoot()
+    if camera and camera.CameraType == Enum.CameraType.Scriptable then
+        camera.CameraType = Enum.CameraType.Custom
+        if humanoid then camera.CameraSubject = humanoid end
+    end
+end
+local function Alive(session) return Farm.Alive and State.Running and session == State.Session end
+
+-- One knock: teleport in front of the door, press the prompt, wait for the server's result toast.
+-- The game anchors the character for its door scene; the result arrives about 5.5s in, and the
+-- next door can be knocked right after it without waiting for the scene to finish.
+local function Knock(entry, session)
+    local root, character = GetRoot()
+    if not root then return nil, "Character unavailable" end
+    local position = PromptPosition(entry.Prompt) or entry.Pos
+    local camPart = entry.Door:FindFirstChild("CamCF", true)
+    local direction = camPart and camPart:IsA("BasePart") and camPart.Position - position
+    direction = direction and Vector3.new(direction.X, 0, direction.Z)
+    if not direction or direction.Magnitude < 0.1 then
+        local look = entry.Door:GetPivot().LookVector
+        direction = Vector3.new(look.X, 0, look.Z)
+    end
+    if direction.Magnitude < 0.1 then return nil, "Door has no front" end
+    direction = direction.Unit
+
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { character }
+    local spot = position + direction * 5
+    local hit = workspace:Raycast(spot + Vector3.new(0, 8, 0), Vector3.new(0, -30, 0), params)
+    local y = (hit and hit.Normal.Y > 0.6 and hit.Position.Y <= position.Y + 1.5) and hit.Position.Y + 3 or position.Y
+
+    root.Anchored = false
+    character:PivotTo(CFrame.lookAt(Vector3.new(spot.X, y, spot.Z), Vector3.new(position.X, y, position.Z)))
+    root.AssemblyLinearVelocity = Vector3.zero
+    local camera = workspace.CurrentCamera
+    camera.CameraType = Enum.CameraType.Scriptable
+    camera.CFrame = CFrame.lookAt(root.Position + direction * 3 + Vector3.new(0, 2, 0), position)
+    task.wait(0.2)
+    if not Alive(session) then return nil, "Stopped" end
+
+    local pending = { Door = entry.Door }
+    Pending = pending
+    local fired, problem = pcall(fireproximityprompt, entry.Prompt, entry.Prompt.HoldDuration)
+    if not fired then Pending = nil return nil, tostring(problem) end
+    local started = os.clock()
+    repeat
+        task.wait(0.05)
+        local elapsed = os.clock() - started
+    until pending.Title or not Alive(session) or elapsed > 10 or (not pending.Locked and elapsed > 2.5)
+    Pending = nil
+    root.Anchored = false
+    return pending
+end
+
+local function HandleResult(entry, pending, reason)
+    local name = entry.Door.Name
+    if not pending or not pending.Title then
+        local locked = pending and pending.Locked
+        State.Retry[name] = os.clock() + (locked and 90 or 45)
+        AddLog(name, locked and "No reply" or (reason or "Not accepted"), Theme.Dim)
+        return false
+    end
+    local cooldown = CooldownSeconds(pending.Title .. " " .. pending.Text)
+    if cooldown then
+        SetCooldown(name, cooldown)
+        AddLog(name, "Cooldown " .. Clock(cooldown), Theme.Dim)
+        return false
+    end
+    SetCooldown(name, 1800)
+    State.Doors = State.Doors + 1
+    local rewards = ParseRewards(pending.Text)
+    if #rewards > 0 or pending.Title:lower():find("treat", 1, true) then
+        State.Treats = State.Treats + 1
+        local parts = {}
+        for _, reward in ipairs(rewards) do
+            if not State.Loot[reward.Name] then
+                State.Loot[reward.Name] = 0
+                table.insert(State.LootOrder, reward.Name)
+            end
+            State.Loot[reward.Name] = State.Loot[reward.Name] + reward.Amount
+            parts[#parts + 1] = "+" .. Comma(reward.Amount) .. " " .. reward.Name
+        end
+        AddLog(name, #parts > 0 and table.concat(parts, ", ") or "Treat", Theme.Good)
+        local embed = RewardEmbed(name, rewards, pending.Text)
+        task.spawn(function()
+            local ok, why = Post(embed)
+            if State.WebhookEnabled then
+                State.WebhookStatus = ok and ("Webhook sent · " .. os.date("%H:%M:%S")) or ("Webhook: " .. tostring(why))
+                RefreshUI()
+            end
+        end)
+        return true
+    end
+    State.Tricks = State.Tricks + 1
+    AddLog(name, "Trick", Theme.Bad)
+    return true
+end
+
+local function Run(session)
+    Bind()
+    while Alive(session) do
+        local all = Doors()
+        local ready = {}
+        for _, entry in ipairs(all) do
+            if Ready(entry) then ready[#ready + 1] = entry end
+        end
+        local allLooted = #all > 0
+        for _, entry in ipairs(all) do
+            if (State.Cooldowns[entry.Door.Name] or 0) <= os.time() then allLooted = false break end
+        end
+        if allLooted and State.KickWhenDone then
+            -- Doors waiting for a retry are not looted yet, so this only fires once every door has a cooldown.
+            SetStatus("Farm Ended", "Every door is looted · leaving")
+            RestoreCamera()
+            local ok, why = Post(EndedEmbed())
+            if State.WebhookEnabled then State.WebhookStatus = ok and "Farm Ended sent" or ("Webhook: " .. tostring(why)) end
+            task.wait(1)
+            if Alive(session) and State.KickWhenDone then LocalPlayer:Kick("Farm Ended") end
+            return
+        end
+        if #ready == 0 then
+            local nextAt
+            for _, entry in ipairs(all) do
+                local expires = State.Cooldowns[entry.Door.Name]
+                if expires and expires > os.time() and (not nextAt or expires < nextAt) then nextAt = expires end
+            end
+            State.SweepDone, State.SweepTotal = 0, 0
+            SetStatus(#all == 0 and "Waiting for houses" or "All doors looted",
+                nextAt and ("Next door in " .. Clock(nextAt - os.time())) or (#all .. " doors on this server"))
+            RestoreCamera()
+            task.wait(1)
+        else
+            local sweep = { Doors = 0, Treats = 0 }
+            State.SweepDone, State.SweepTotal = 0, #ready
+            while Alive(session) and #ready > 0 do
+                local root = GetRoot()
+                if not root then
+                    SetStatus("Waiting for character", "")
+                    task.wait(0.5)
+                else
+                    table.sort(ready, function(a, b)
+                        return (root.Position - a.Pos).Magnitude < (root.Position - b.Pos).Magnitude
+                    end)
+                    local entry = table.remove(ready, 1)
+                    if Ready(entry) then
+                        SetStatus("Knocking " .. entry.Door.Name,
+                            string.format("Door %d of %d", State.SweepDone + 1, State.SweepTotal))
+                        local pending, reason = Knock(entry, session)
+                        if not Alive(session) then break end
+                        local before = State.Treats
+                        if HandleResult(entry, pending, reason) then sweep.Doors = sweep.Doors + 1 end
+                        sweep.Treats = sweep.Treats + (State.Treats - before)
+                    end
+                    State.SweepDone = State.SweepDone + 1
+                    RefreshUI()
+                end
+            end
+            RestoreCamera()
+            if Alive(session) and sweep.Doors > 0 then
+                local ok, why = Post(SummaryEmbed(sweep))
+                if State.WebhookEnabled then
+                    State.WebhookStatus = ok and ("Summary sent · " .. os.date("%H:%M:%S")) or ("Webhook: " .. tostring(why))
+                end
+            end
+        end
+    end
+end
+
+function Farm.Start()
+    if State.Running or not Farm.Alive then return end
+    if type(fireproximityprompt) ~= "function" then
+        SetStatus("Unsupported", "This executor has no fireproximityprompt")
+        return
+    end
+    State.Running = true
+    State.Session = State.Session + 1
+    local session = State.Session
+    SetStatus("Starting", "Finding doors")
+    task.spawn(function()
+        local ok, why = xpcall(Run, function(err) return tostring(err) end, session)
+        if session == State.Session then
+            State.Running = false
+            if not ok then SetStatus("Stopped", why) end
+        end
+        RestoreCamera()
+        RefreshUI()
+    end)
+end
+function Farm.Stop()
+    State.Running = false
+    State.Session = State.Session + 1
+    Pending = nil
+    local root = GetRoot()
+    if root then root.Anchored = false end
+    RestoreCamera()
+    State.SweepDone, State.SweepTotal = 0, 0
+    SetStatus("Stopped", "Press Start")
+end
+function Farm.Destroy()
+    if State.Running then Farm.Stop() end
+    Farm.Alive = false
+    for _, connection in ipairs(Farm.Connections) do pcall(function() connection:Disconnect() end) end
+    if Ui.Gui then Ui.Gui:Destroy() end
+    if Env.DoorFarm == Farm then Env.DoorFarm = nil end
+end
+Farm.State = State
+
+Ui.Start.Activated:Connect(function()
+    if State.Running then Farm.Stop() else Farm.Start() end
+end)
+Ui.Test.Activated:Connect(function()
+    State.WebhookStatus = "Sending test..."
+    RefreshUI()
+    task.spawn(function()
+        local ok, why = Post({
+            title = "🎃 Door Farm connected",
+            description = "Webhook is working. Rewards will arrive here as soon as a door gives them.",
+            color = 0xFF8C28,
+            fields = {
+                { name = "👤 Account", value = Account(), inline = true },
+                { name = "🕒 Time", value = "<t:" .. os.time() .. ":T>", inline = true },
+            },
+            footer = { text = "Door Farm" },
+            timestamp = DateTime.now():ToIsoDate(),
+        }, true)
+        State.WebhookStatus = ok and ("Test sent · " .. os.date("%H:%M:%S")) or ("Test failed: " .. tostring(why))
+        RefreshUI()
+    end)
+end)
+
+RebuildLists()
+SetStatus("Idle", #Doors() .. " doors on this server · press Start")
+task.spawn(function()
+    while Farm.Alive do
+        RefreshUI()
+        task.wait(0.5)
+    end
+end)
+if State.AutoStart then task.delay(1, Farm.Start) end
+print("[DoorFarm] Loaded. RightControl hides the panel.")
