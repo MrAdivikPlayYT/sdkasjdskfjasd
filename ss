@@ -742,8 +742,11 @@ Hub.RecordAbilityAction = function(towerId, abilityIndex, marker, details)
     return true
 end
 
-Hub.RecordBoostLinkAction = function(sourceId, targetId)
+-- attribute: the target attribute holding the source ID. "ClockBoost" covers Clock Woman and
+-- DJ (Select Boost); "SpeakerBoost" is Speakerdrone's Armada Boost. Both use BoostSelect.
+Hub.RecordBoostLinkAction = function(sourceId, targetId, attribute)
     if not State.Recording or not TowerDataFolder then return false end
+    attribute = attribute or "ClockBoost"
 
     local sourceTower = typeof(sourceId) == "Instance"
         and sourceId
@@ -773,7 +776,7 @@ Hub.RecordBoostLinkAction = function(sourceId, targetId)
             if ready and State.Recording
                 and sourceTower.Parent == TowerDataFolder
                 and targetTower.Parent == TowerDataFolder then
-                Hub.RecordBoostLinkAction(sourceTower, targetTower)
+                Hub.RecordBoostLinkAction(sourceTower, targetTower, attribute)
             end
         end)
         return true
@@ -791,6 +794,7 @@ Hub.RecordBoostLinkAction = function(sourceId, targetId)
         Type = "BoostLink",
         SourceHandle = sourceMeta.Handle,
         TargetHandle = targetMeta.Handle,
+        Attribute = attribute ~= "ClockBoost" and attribute or nil,
     })
     return true
 end
@@ -876,6 +880,7 @@ local function AttachTowerRecorder(tower, handle)
         LastAbilityAction = nil,
         LastAbilityRecordedAt = -math.huge,
         ClockBoost = tower:GetAttribute("ClockBoost"),
+        SpeakerBoost = tower:GetAttribute("SpeakerBoost"),
         LastBoostSourceHandle = nil,
         LastBoostRecordedAt = -math.huge,
         PendingBoostSourceHandle = nil,
@@ -932,23 +937,25 @@ local function AttachTowerRecorder(tower, handle)
         meta.TargetMode = newMode
     end))
 
-    AddConnection(State.RecorderConnections, tower:GetAttributeChangedSignal("ClockBoost"):Connect(function()
-        local previous = meta.ClockBoost
-        local sourceId = tower:GetAttribute("ClockBoost")
-        meta.ClockBoost = sourceId
-        if not State.Recording
-            or sourceId == nil
-            or tostring(sourceId) == ""
-            or tostring(sourceId) == "0"
-            or tostring(sourceId) == tostring(previous) then
-            return
-        end
+    for _, attribute in ipairs({ "ClockBoost", "SpeakerBoost" }) do
+        AddConnection(State.RecorderConnections, tower:GetAttributeChangedSignal(attribute):Connect(function()
+            local previous = meta[attribute]
+            local sourceId = tower:GetAttribute(attribute)
+            meta[attribute] = sourceId
+            if not State.Recording
+                or sourceId == nil
+                or tostring(sourceId) == ""
+                or tostring(sourceId) == "0"
+                or tostring(sourceId) == tostring(previous) then
+                return
+            end
 
-        -- BoostSelect is recorded from replicated state rather than a remote
-        -- hook. The target's ClockBoost attribute contains the live server ID
-        -- of the Clock Woman that was linked to it.
-        Hub.RecordBoostLinkAction(sourceId, tower)
-    end))
+            -- BoostSelect is recorded from replicated state rather than a remote
+            -- hook. The target's attribute contains the live server ID of the
+            -- booster linked to it (Clock Woman/DJ or Speakerdrone's Armada).
+            Hub.RecordBoostLinkAction(sourceId, tower, attribute)
+        end))
+    end
 
     AddConnection(State.RecorderConnections, tower.AttributeChanged:Connect(function(attribute)
         if State.Recording and meta.Session==State.RecordSession then
@@ -1645,18 +1652,19 @@ local function PlayBoostLink(action, session)
         return false, "Boost source has an invalid server ID"
     end
 
-    if tostring(targetTower:GetAttribute("ClockBoost")) == tostring(sourceId) then
+    local attribute = action.Attribute or "ClockBoost"
+    if tostring(targetTower:GetAttribute(attribute)) == tostring(sourceId) then
         return true
     end
 
     -- Captured transport: BoostSelect:FireServer(number sourceId, string targetId).
-    -- Send once, then trust only the replicated ClockBoost confirmation.
+    -- Send once, then trust only the replicated boost attribute confirmation.
     Remotes.BoostSelect:FireServer(sourceId, targetId)
     local confirmed = WaitUntil(function()
         return not PlaybackAlive(session)
             or sourceTower.Parent ~= TowerDataFolder
             or targetTower.Parent ~= TowerDataFolder
-            or tostring(targetTower:GetAttribute("ClockBoost")) == tostring(sourceId)
+            or tostring(targetTower:GetAttribute(attribute)) == tostring(sourceId)
     end, 5, 0.05)
 
     if not PlaybackAlive(session) then
