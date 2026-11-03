@@ -1151,6 +1151,10 @@ local function StartRecording(profileName)
         if not meta then
             return
         end
+        -- Sacrifice kills its own tower (~37s after the cast); that is not a player sell.
+        if AbilityMarkerActive(meta.AbilityMarkers.ATTACKSacrifice) then
+            return
+        end
 
         task.delay(0.15, function()
             if State.Recording and State.RecordSession == recordSession and not IsGameEnded() then
@@ -1410,6 +1414,14 @@ end
 local function PlaySell(action, session)
     local tower = ResolveHandle(action.Handle)
     if not tower then
+        return true
+    end
+    -- Older macros recorded the Sacrifice death as a Sell. Selling mid-sacrifice
+    -- cancels the ability, so let the tower die on its own instead.
+    if AbilityMarkerActive(tower:GetAttribute("ATTACKSacrifice")) then
+        WaitUntil(function()
+            return not PlaybackAlive(session) or tower.Parent ~= TowerDataFolder
+        end, 90, 0.2)
         return true
     end
 
